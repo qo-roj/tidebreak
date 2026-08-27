@@ -82,10 +82,13 @@ With Ollama, that data never leaves your machine.
 
 An agent could write sensitive data to a file that gets synced to cloud storage
 (Dropbox, iCloud, Google Drive), or exfiltrate via a DNS query, or embed it in a
-git commit that gets pushed to a remote.
+git commit that gets pushed to a remote. Encoding-based bypass (base64, hex)
+is addressed in [Design Decisions §5](design-decisions.md#issue-5-bypass-vectors-encoding-fragmentation-obfuscation).
 
 **Mitigation:** Tidebreak only intercepts LLM API calls. It cannot monitor all
-possible exfiltration channels. This is a known limitation. Future versions could
+possible exfiltration channels. Layered defense (pattern redaction → encoding
+detection → contextual redaction → anomaly detection) catches common bypasses.
+The audit log flags `bypass_risk` for manual review. Future versions could
 integrate with eBPF for broader monitoring.
 
 ### 3. Compromised Local Model

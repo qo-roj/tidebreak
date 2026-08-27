@@ -2,12 +2,31 @@
 set -euo pipefail
 
 # Tidebreak — Installer
-# Usage: curl -fsSL https://tidebreak.dev/install.sh | bash
+# Usage:
+#   curl -fsSL https://tidebreak.dev/install.sh | bash          # GitHub release (when available)
+#   TIDEBREAK_MIRROR=https://mirror.local bash install.sh       # Fleet mirror
+#   bash install.sh --local /path/to/tidebreak-binary          # Local binary (dev)
+#   bash install.sh --build                                     # Build from source (needs Go)
 
-VERSION="${1:-latest}"
+VERSION="${VERSION:-latest}"
 INSTALL_DIR="${HOME}/.local/bin"
 CONFIG_DIR="${HOME}/.config/tidebreak"
 DATA_DIR="${HOME}/.local/share/tidebreak"
+LOCAL_BINARY=""
+DO_BUILD=false
+
+# Parse args
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --local)    LOCAL_BINARY="$2"; shift 2 ;;
+        --build)   DO_BUILD=true; shift ;;
+        --version) VERSION="$2"; shift 2 ;;
+        *) echo "Unknown arg: $1"; exit 1 ;;
+    esac
+done
+
+# Mirror URL (can be overridden for fleet/private hosting)
+DOWNLOAD_BASE="${TIDEBREAK_MIRROR:-https://github.com/earl-sid/tidebreak/releases}"
 
 echo "🦞 Tidebreak — Redaction Gateway for AI Agents"
 echo ""
@@ -34,21 +53,61 @@ echo ""
 # Create directories
 mkdir -p "$INSTALL_DIR" "$CONFIG_DIR" "$DATA_DIR"
 
-# Download binary
-if [[ "$VERSION" == "latest" ]]; then
-    DOWNLOAD_URL="https://github.com/earl-sid/tidebreak/releases/latest/download/tidebreak-${PLATFORM}-${ARCH}"
-else
-    DOWNLOAD_URL="https://github.com/earl-sid/tidebreak/releases/download/${VERSION}/tidebreak-${PLATFORM}-${ARCH}"
-fi
-
-echo "Downloading Tidebreak ${VERSION}..."
-if curl -fsSL "$DOWNLOAD_URL" -o "${INSTALL_DIR}/tidebreak"; then
+# Install method 1: local binary (development)
+if [[ -n "$LOCAL_BINARY" ]]; then
+    echo "Installing from local binary: $LOCAL_BINARY"
+    cp "$LOCAL_BINARY" "${INSTALL_DIR}/tidebreak"
     chmod +x "${INSTALL_DIR}/tidebreak"
     echo "✓ Binary installed to ${INSTALL_DIR}/tidebreak"
+
+# Install method 2: build from source
+elif [[ "$DO_BUILD" == true ]]; then
+    if ! command -v go &>/dev/null; then
+        echo "✗ Go is not installed. Install Go or use --local / a release binary."
+        exit 1
+    fi
+    echo "Building from source..."
+    TMP_SRC="$(mktemp -d)"
+    git clone https://github.com/earl-sid/tidebreak "$TMP_SRC" 2>/dev/null || {
+        echo "✗ Could not clone repo. If the GitHub repo doesn't exist yet,"
+        echo "  use --local /path/to/binary or build manually."
+        exit 1
+    }
+    cd "$TMP_SRC" && go build -o "${INSTALL_DIR}/tidebreak" ./cmd/tidebreak
+    chmod +x "${INSTALL_DIR}/tidebreak"
+    rm -rf "$TMP_SRC"
+    echo "✓ Built and installed to ${INSTALL_DIR}/tidebreak"
+
+# Install method 3: download from mirror/GitHub releases
 else
-    echo "✗ Failed to download. Check your connection or version."
-    echo "  URL: ${DOWNLOAD_URL}"
-    exit 1
+    if [[ "$VERSION" == "latest" ]]; then
+        DOWNLOAD_URL="${DOWNLOAD_BASE}/latest/download/tidebreak-${PLATFORM}-${ARCH}"
+    else
+        DOWNLOAD_URL="${DOWNLOAD_BASE}/download/${VERSION}/tidebreak-${PLATFORM}-${ARCH}"
+    fi
+
+    echo "Downloading Tidebreak ${VERSION}..."
+    echo "  Source: ${DOWNLOAD_URL}"
+    echo ""
+
+    if curl -fsSL "$DOWNLOAD_URL" -o "${INSTALL_DIR}/tidebreak" 2>/dev/null; then
+        chmod +x "${INSTALL_DIR}/tidebreak"
+        echo "✓ Binary installed to ${INSTALL_DIR}/tidebreak"
+    else
+        echo "✗ Failed to download from ${DOWNLOAD_URL}"
+        echo ""
+        echo "The GitHub repo may not exist yet. Alternative install methods:"
+        echo ""
+        echo "  1. Build from source (requires Go):"
+        echo "     bash install.sh --build"
+        echo ""
+        echo "  2. Install a local binary (development):"
+        echo "     bash install.sh --local /path/to/tidebreak"
+        echo ""
+        echo "  3. Use a fleet mirror:"
+        echo "     TIDEBREAK_MIRROR=https://your-mirror bash install.sh"
+        exit 1
+    fi
 fi
 
 # Check if binary is in PATH
@@ -68,9 +127,10 @@ if [[ ! -f "${CONFIG_DIR}/tidebreak.conf" ]]; then
 [gateway]
 port = 8842
 log_level = info
+# tls = false  # set true for paranoid mode (local TLS)
 
 [cloud]
-# Cloud providers — keys are read from env vars by default
+# Cloud providers — keys read from env vars by default
 # ANTHROPIC_API_KEY, OPENAI_API_KEY, etc.
 # Or set explicitly:
 # anthropic = sk-ant-xxx

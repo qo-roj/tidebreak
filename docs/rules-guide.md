@@ -50,6 +50,33 @@ Paths use glob patterns (doublestar — `**` matches recursively).
 /var/log/nginx/access.log
 ```
 
+### Command-Output Rules
+
+Command rules classify the **output** of commands that agents run (via tool use).
+These are separate from path rules because they match command strings, not file paths.
+
+```ini
+[cmd]
+# Redact command output (strip IPs, emails, etc.)
+journalctl -u *           = redact
+docker logs *              = redact
+ps aux                    = redact
+ss -tlnp                  = redact
+
+# Route command output to local Ollama only (never to cloud)
+mysql *                   = local-only
+psql *                    = local-only
+redis-cli *               = local-only
+
+# Block — agent should never run this
+cat /etc/shadow           = block
+```
+
+How it works: when an agent runs a command (e.g. `journalctl -u nginx`), the
+tool result contains the command and its output. Tidebreak matches the command
+against `[cmd]` rules and classifies the output accordingly. Path rules do NOT
+apply to command output — they only apply to file content.
+
 **Special prefixes:**
 - `~/` — expands to current user's home directory
 - `~USER/` — expands to a specific user's home

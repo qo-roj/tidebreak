@@ -48,18 +48,23 @@ LLM API calls between AI coding agents and cloud providers.
 
 ### 1. Proxy Server (`internal/proxy/`)
 
-- Go `net/http` reverse proxy with TLS interception
-- Listens on `localhost:8842` by default
+- Go `net/http` reverse proxy with split TLS model (see [Design Decisions §8](design-decisions.md#issue-8-tls-model))
+- Listens on `localhost:8842` — **plain HTTP** (localhost only, no TLS needed)
+- Upstream connections to cloud APIs use **HTTPS** (TLS terminated by cloud provider)
 - Routes based on path prefix:
   - `/anthropic/*` → Anthropic API
   - `/openai/*` → OpenAI API
   - `/xai/*` → xAI API
   - `/ollama/*` → local Ollama (passthrough, no redaction needed)
+- Agent identification via `X-Tidebreak-Agent` header, API key fingerprint, or port (see [Design Decisions §7](design-decisions.md#issue-7-per-agent-identification))
+- Streaming: SSE responses pass through with real-time token reverse-mapping (see [Design Decisions §2](design-decisions.md#issue-2-streaming-sse-support))
 - Transparent to agents — they just hit `localhost:8842` instead of the real API
 
 ### 2. Classifier (`internal/classify/`)
 
-Scans request content and assigns a tier to each piece:
+Scans request content and assigns a tier to each **content block** (not whole
+request). See [Design Decisions §1](design-decisions.md#issue-1-mixed-tier-content-in-single-requests)
+for the mixed-tier resolution.
 
 ```go
 type Tier int
@@ -74,25 +79,36 @@ const (
 
 Classification sources:
 - **Path rules** — from config file (`block`, `local-only`, `redact` sections)
+- **Command rules** — `[cmd]` section matches command output (e.g. `journalctl -u *`)
 - **Pattern matches** — regex patterns for IPs, emails, API keys, etc.
-- **Content heuristics** — if a file path appears in the request, classify based on the path rules
+- **Content heuristics** — if a file path or command appears in the request, classify based on rules
+
+When a single content block contains multiple sub-tier elements, the block is
+escalated to the **highest** tier present (conservative — when in doubt, escalate).
 
 ### 3. Redactor (`internal/redact/`)
 
 - Applies regex replacements based on enabled patterns
 - Maintains an in-memory `map[string]string` mapping redaction tokens back to originals
-- Reverse-maps tokens in response content so the agent can act on real values
-- Never persists the mapping table — destroyed when the request completes
+- Token format: `[TB:IP:1]`, `[TB:EMAIL:3]`, `[TB:TOKEN:1]` — distinctive `TB:` prefix prevents collisions
+- Reverse-maps tokens in response content (including SSE streams) so the agent can act on real values
+- Fuzzy matching handles reformatted tokens (quotes stripped, brackets removed)
+- Mappings are **scoped per request** — never shared across requests, destroyed after completion
+- Never persists the mapping table — in-memory only
+
+See [Design Decisions §3](design-decisions.md#issue-3-token-reverse-mapping-robustness) for
+token format and fuzzy matching details.
 
 ```go
 type Redactor struct {
     patterns []*Pattern
-    mapping  map[string]string  // [IP_REDACTED_1] → 203.0.113.42
+    scope    *RequestScope  // per-request mapping, not global
     mu       sync.Mutex
 }
 
 func (r *Redactor) Redact(content string) string
 func (r *Redactor) Restore(content string) string
+func (r *Redactor) ProcessStreamChunk(chunk []byte) []byte  // SSE streaming support
 ```
 
 ### 4. Router (`internal/route/`)
@@ -106,10 +122,13 @@ Content tier = LOCAL_ONLY→ send to Ollama → get summary → forward summary 
 Content tier = BLOCKED   → return error to agent: "access denied by Tidebreak"
 ```
 
-For `LOCAL_ONLY` with Ollama:
-1. Send raw content to local Ollama with a prompt: "Summarize this for an AI coding agent. Remove all PII, IPs, emails, credentials. Keep technical details: error messages, config keys, service names, query patterns."
+For `LOCAL_ONLY` with Ollama (two-stage redaction pipeline — see
+[Design Decisions §4](design-decisions.md#issue-4-ollama-summary-redaction-before-cloud-forwarding)):
+
+1. Send raw content to local Ollama with a summarization prompt (removes unstructured PII)
 2. Ollama returns a de-identified summary
-3. The summary is sent to the cloud model as the agent's context
+3. The summary passes through the **same pattern redactor** (removes structured PII that Ollama missed)
+4. The double-scrubbed summary is sent to the cloud model as the agent's context
 
 If no Ollama is configured, `LOCAL_ONLY` content is blocked entirely.
 
@@ -215,7 +234,12 @@ tidebreak audit --export > log.json # export for compliance
 ## Security Considerations
 
 - The mapping table (redaction token → original) lives in process memory only
+- Mappings are **scoped per request** — never shared across requests
 - Never written to disk, never logged, never sent anywhere
 - Cleared after each request completes
 - Process runs as user (not root), reads only files the user can read
 - The proxy itself is localhost-only — no remote access to the gateway
+- Bypass vectors (encoding, fragmentation, obfuscation) are addressed via layered
+  defense — see [Design Decisions §5](design-decisions.md#issue-5-bypass-vectors-encoding-fragmentation-obfuscation).
+  Tidebreak is defense in depth, not a complete solution. The audit log includes
+  `bypass_risk` indicators for manual review.
