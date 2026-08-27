@@ -1,0 +1,254 @@
+// Package main is the Tidebreak CLI entry point.
+package main
+
+import (
+	"flag"
+	"fmt"
+	"os"
+	"time"
+
+	"github.com/earl-sid/tidebreak/internal/audit"
+	"github.com/earl-sid/tidebreak/internal/config"
+	"github.com/earl-sid/tidebreak/internal/rules"
+)
+
+// Version is set at build time via -ldflags.
+var Version = "dev"
+
+func main() {
+	if len(os.Args) < 2 {
+		printUsage()
+		os.Exit(1)
+	}
+
+	switch os.Args[1] {
+	case "version":
+		fmt.Printf("tidebreak %s\n", Version)
+	case "start":
+		cmdStart(os.Args[2:])
+	case "audit":
+		cmdAudit(os.Args[2:])
+	case "classify":
+		cmdClassify(os.Args[2:])
+	case "config":
+		cmdConfig(os.Args[2:])
+	case "install":
+		cmdInstall(os.Args[2:])
+	case "setup-ollama":
+		cmdSetupOllama()
+	case "presets":
+		cmdPresets()
+	case "help", "-h", "--help":
+		printUsage()
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown command: %s\n\n", os.Args[1])
+		printUsage()
+		os.Exit(1)
+	}
+}
+
+func printUsage() {
+	fmt.Println(`tidebreak — redaction gateway for AI coding agents
+
+Usage:
+  tidebreak <command> [flags]
+
+Commands:
+  start          Start the gateway proxy
+  audit          Query the audit log
+  classify       Test how a file would be classified
+  config         Edit or view configuration
+  install        Configure an agent to use Tidebreak
+  setup-ollama   Configure local Ollama model
+  presets        List available presets
+  version        Show version
+
+Run 'tidebreak <command> --help' for command-specific flags.`)
+}
+
+func cmdStart(args []string) {
+	fs := flag.NewFlagSet("start", flag.ExitOnError)
+	port := fs.Int("port", 0, "Gateway port (default: 8842)")
+	preset := fs.String("preset", "", "Rule preset (desktop, server, paranoid)")
+	fs.Parse(args)
+
+	cfg, err := config.Load(*port, *preset)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("🦞 Tidebreak %s starting...\n", Version)
+	fmt.Printf("   Port: %d\n", cfg.Gateway.Port)
+	fmt.Printf("   Preset: %s\n", cfg.Gateway.Preset)
+	fmt.Printf("   Ollama: %s (%s)\n", cfg.Local.OllamaURL, cfg.Local.OllamaModel)
+	fmt.Println()
+	fmt.Println("   Proxy not yet implemented — waiting on architecture decisions.")
+	fmt.Println("   Redaction engine, rules parser, and audit log are ready.")
+}
+
+func cmdAudit(args []string) {
+	fs := flag.NewFlagSet("audit", flag.ExitOnError)
+	agent := fs.String("agent", "", "Filter by agent name")
+	live := fs.Bool("live", false, "Tail -f style live mode")
+	since := fs.String("since", "24h", "Time range (e.g. 2h, 24h, 7d)")
+	limit := fs.Int("limit", 100, "Maximum entries to show")
+	fs.Parse(args)
+
+	_ = live // TODO: implement live mode
+	_ = since // TODO: parse duration
+
+	home, _ := os.UserHomeDir()
+	dbPath := home + "/.local/share/tidebreak/audit.db"
+
+	log, err := audit.New(dbPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error opening audit log: %v\n", err)
+		os.Exit(1)
+	}
+	defer log.Close()
+
+	entries, err := log.Query(*agent, parseSince(*since), *limit)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error querying audit log: %v\n", err)
+		os.Exit(1)
+	}
+
+	if len(entries) == 0 {
+		fmt.Println("No audit entries found.")
+		return
+	}
+
+	for _, e := range entries {
+		approved := "✗"
+		if e.Approved {
+			approved = "✓"
+		}
+		fmt.Printf("%s  %s  %s  %s  %s  tier=%s  %s\n",
+			e.Timestamp.Format("2006-01-02 15:04:05"),
+			e.Agent, e.Provider, e.Action, e.Target, e.Tier, approved,
+		)
+	}
+}
+
+func cmdClassify(args []string) {
+	fs := flag.NewFlagSet("classify", flag.ExitOnError)
+	fs.Parse(args)
+
+	if fs.NArg() == 0 {
+		fmt.Fprintln(os.Stderr, "Usage: tidebreak classify <path>")
+		os.Exit(1)
+	}
+
+	path := fs.Arg(0)
+	cfg, err := config.Load(0, "")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
+		os.Exit(1)
+	}
+
+	tier, source := cfg.RuleSet.ClassifyPath(path)
+	fmt.Printf("path:   %s\n", path)
+	fmt.Printf("tier:   %s\n", tier)
+	fmt.Printf("source: %s\n", source)
+
+	if tier == rules.TierRedacted {
+		fmt.Println()
+		fmt.Println("Redaction patterns would be applied to this content.")
+		fmt.Println("Use 'tidebreak dry-run --file <path>' to see redacted output.")
+	}
+}
+
+func cmdConfig(args []string) {
+	if len(args) == 0 {
+		fmt.Println("Usage: tidebreak config [edit|show|set <key> <value>]")
+		return
+	}
+
+	switch args[0] {
+	case "edit":
+		home, _ := os.UserHomeDir()
+		path := home + "/.config/tidebreak/tidebreak.conf"
+		editor := os.Getenv("EDITOR")
+		if editor == "" {
+			editor = "vi"
+		}
+		fmt.Printf("Opening %s with %s\n", path, editor)
+		// In production, exec the editor. For now just show the path.
+		fmt.Println("(editor exec not yet implemented)")
+	case "show":
+		home, _ := os.UserHomeDir()
+		path := home + "/.config/tidebreak/tidebreak.conf"
+		if _, err := os.Stat(path); err != nil {
+			fmt.Println("No config file found. Using defaults.")
+			return
+		}
+		data, _ := os.ReadFile(path)
+		fmt.Print(string(data))
+	case "set":
+		if len(args) < 3 {
+			fmt.Println("Usage: tidebreak config set <key> <value>")
+			return
+		}
+		fmt.Printf("Setting %s = %s (not yet implemented)\n", args[1], args[2])
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown config command: %s\n", args[0])
+	}
+}
+
+func cmdInstall(args []string) {
+	fs := flag.NewFlagSet("install", flag.ExitOnError)
+	all := fs.Bool("all", false, "Configure all detected agents")
+	agent := fs.String("agent", "", "Configure a specific agent")
+	dryRun := fs.Bool("dry-run", false, "Show changes without applying")
+	fs.Parse(args)
+
+	if *all {
+		fmt.Println("Detecting installed agents...")
+		fmt.Println("(not yet implemented)")
+		return
+	}
+
+	if *agent != "" {
+		dryStr := ""
+		if *dryRun {
+			dryStr = " (dry run)"
+		}
+		fmt.Printf("Configuring agent: %s%s\n", *agent, dryStr)
+		fmt.Println("(not yet implemented)")
+		return
+	}
+
+	fmt.Println("Usage: tidebreak install --all | --agent <name>")
+}
+
+func cmdSetupOllama() {
+	fmt.Println("🦞 Tidebreak — Ollama Setup")
+	fmt.Println("(not yet implemented — see scripts/ollama-setup.sh)")
+}
+
+func cmdPresets() {
+	fmt.Println("Available presets:")
+	fmt.Println("  desktop    — Omarchy / personal workstation (default)")
+	fmt.Println("  server     — Production server with user data")
+	fmt.Println("  paranoid   — Maximum redaction, minimal cloud exposure")
+}
+
+func parseSince(s string) time.Time {
+	// Parse duration strings like "24h", "2h", "7d"
+	if s == "" {
+		return time.Time{}
+	}
+	// Convert "7d" to "168h" etc.
+	if len(s) > 1 && s[len(s)-1] == 'd' {
+		s = s[:len(s)-1] + "h"
+		// crude: multiply by 24
+		// TODO: use time.ParseDuration properly with day support
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		// Default: 24h
+		d = 24 * time.Hour
+	}
+	return time.Now().Add(-d)
+}

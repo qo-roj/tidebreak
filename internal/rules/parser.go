@@ -44,16 +44,13 @@ func ParseConfig(path string) (*Config, error) {
 			switch {
 			case section == "block":
 				currentSection = "block"
-				currentAgent = ""
+				// Don't reset currentAgent if we're inside an agent block
 			case section == "local-only":
 				currentSection = "local-only"
-				currentAgent = ""
 			case section == "redact":
 				currentSection = "redact"
-				currentAgent = ""
 			case section == "redaction.patterns":
 				currentSection = "patterns"
-				currentAgent = ""
 			case strings.HasPrefix(section, "agent:"):
 				currentAgent = strings.TrimSpace(section[len("agent:"):])
 				currentSection = "block" // default section for agent rules
@@ -63,14 +60,11 @@ func ParseConfig(path string) (*Config, error) {
 						AgentRules: make(map[string]*Config),
 					}
 				}
-			case section == "gateway" || section == "cloud" || section == "local" || section == "preset":
-				currentSection = "skip" // handled by config package, not rules
+			case section == "preset":
+				currentSection = "preset"
 				currentAgent = ""
 			default:
-				// Unknown section — could be a preset name or other config
-				if section == "desktop" || section == "server" || section == "paranoid" {
-					cfg.Preset = section
-				}
+				// Unknown section — could be other config like [gateway], [cloud], [local]
 				currentSection = "skip"
 				currentAgent = ""
 			}
@@ -79,6 +73,15 @@ func ParseConfig(path string) (*Config, error) {
 
 		// Skip sections we don't process here
 		if currentSection == "skip" {
+			continue
+		}
+
+		// Preset value line (bare word under [preset])
+		if currentSection == "preset" {
+			val := strings.TrimSpace(line)
+			if val == "desktop" || val == "server" || val == "paranoid" || strings.Contains(val, ",") {
+				cfg.Preset = val
+			}
 			continue
 		}
 
