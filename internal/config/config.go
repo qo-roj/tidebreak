@@ -4,13 +4,27 @@
 package config
 
 import (
+	"embed"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/earl-sid/tidebreak/internal/rules"
 )
+
+//go:embed rules/defaults.conf
+var defaultsConf embed.FS
+
+//go:embed rules/presets/desktop.conf
+var desktopConf embed.FS
+
+//go:embed rules/presets/server.conf
+var serverConf embed.FS
+
+//go:embed rules/presets/paranoid.conf
+var paranoidConf embed.FS
 
 // Gateway holds the runtime configuration for the Tidebreak gateway.
 type Gateway struct {
@@ -34,15 +48,15 @@ type Local struct {
 
 // AppConfig is the fully resolved configuration.
 type AppConfig struct {
-	Gateway  Gateway
-	Cloud    Cloud
-	Local    Local
-	RuleSet  *rules.RuleSet
+	Gateway Gateway
+	Cloud   Cloud
+	Local   Local
+	RuleSet *rules.RuleSet
 }
 
 // Load resolves configuration from all sources in order:
-// 1. Built-in defaults
-// 2. Preset (if specified)
+// 1. Built-in defaults (embedded in binary)
+// 2. Preset (embedded in binary)
 // 3. User config (~/.config/tidebreak/tidebreak.conf)
 // 4. Project-local config (./.tidebreak.conf)
 // 5. CLI flags (passed as params)
@@ -59,15 +73,29 @@ func Load(cliPort int, cliPreset string) (*AppConfig, error) {
 		},
 	}
 
-	// Start with empty merged config — rules are built from parsed configs
-	var mergedRules *rules.Config
+	// 1. Built-in defaults (embedded)
+	defaultsData, err := defaultsConf.ReadFile("rules/defaults.conf")
+	if err != nil {
+		return nil, fmt.Errorf("reading embedded defaults: %w", err)
+	}
+	defaultsCfg, err := rules.ParseConfigBytes(defaultsData, "defaults")
+	if err != nil {
+		return nil, fmt.Errorf("parsing defaults: %w", err)
+	}
+	mergedRules := defaultsCfg
 
-	// 2. Preset rules — load preset file if it exists
-	presetPath := filepath.Join("rules", "presets", cfg.Gateway.Preset+".conf")
-	if fileExists(presetPath) {
-		presetCfg, err := rules.ParseConfig(presetPath)
+	// 2. Preset (embedded)
+	if cliPreset != "" {
+		cfg.Gateway.Preset = cliPreset
+	}
+	presetData, err := loadPreset(cfg.Gateway.Preset)
+	if err != nil {
+		return nil, fmt.Errorf("loading preset %s: %w", cfg.Gateway.Preset, err)
+	}
+	if presetData != nil {
+		presetCfg, err := rules.ParseConfigBytes(presetData, "preset:"+cfg.Gateway.Preset)
 		if err != nil {
-			return nil, fmt.Errorf("preset config: %w", err)
+			return nil, fmt.Errorf("parsing preset: %w", err)
 		}
 		mergedRules = rules.MergeConfig(mergedRules, presetCfg)
 	}
@@ -102,9 +130,6 @@ func Load(cliPort int, cliPreset string) (*AppConfig, error) {
 	if cliPort > 0 {
 		cfg.Gateway.Port = cliPort
 	}
-	if cliPreset != "" {
-		cfg.Gateway.Preset = cliPreset
-	}
 
 	// Build the rule set
 	if mergedRules == nil {
@@ -120,6 +145,24 @@ func Load(cliPort int, cliPreset string) (*AppConfig, error) {
 	cfg.Cloud.XAIKey = os.Getenv("XAI_API_KEY")
 
 	return cfg, nil
+}
+
+// loadPreset returns the embedded preset config data for the given preset name.
+// Returns nil if the preset name is empty or unknown.
+func loadPreset(name string) ([]byte, error) {
+	name = strings.TrimSpace(name)
+	switch name {
+	case "":
+		return nil, nil
+	case "desktop":
+		return desktopConf.ReadFile("rules/presets/desktop.conf")
+	case "server":
+		return serverConf.ReadFile("rules/presets/server.conf")
+	case "paranoid":
+		return paranoidConf.ReadFile("rules/presets/paranoid.conf")
+	default:
+		return nil, fmt.Errorf("unknown preset: %s", name)
+	}
 }
 
 // fileExists returns true if the path exists and is not a directory.

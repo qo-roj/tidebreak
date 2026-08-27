@@ -12,18 +12,22 @@ import (
 // The format is INI-style with sections [block], [local-only], [redact],
 // [redaction.patterns], and [agent:<name>].
 func ParseConfig(path string) (*Config, error) {
-	f, err := os.Open(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("opening config %s: %w", path, err)
 	}
-	defer f.Close()
+	return ParseConfigBytes(data, path)
+}
 
+// ParseConfigBytes parses config data from a byte slice.
+// The path parameter is used for error messages only.
+func ParseConfigBytes(data []byte, path string) (*Config, error) {
 	cfg := &Config{
 		Patterns:   make(map[string]bool),
 		AgentRules: make(map[string]*Config),
 	}
 
-	scanner := bufio.NewScanner(f)
+	scanner := bufio.NewScanner(strings.NewReader(string(data)))
 	scanner.Buffer(make([]byte, 0, 1024*1024), 1024*1024) // accept large configs
 
 	var currentSection string
