@@ -13,8 +13,8 @@ func DefaultPatterns() []*Pattern {
 		// Private keys (PEM blocks) — most specific, must run before credit card etc.
 		{
 			Name:        "private_key",
-			Regex:       regexp.MustCompile(`-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----`),
-			Replacement: "[KEY_BLOCKED_%d]",
+			Regex:       regexp.MustCompile(`(?s)-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----.*?-----END (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----`),
+			Replacement: "[TB:KEY:%d]",
 			Enabled:     true,
 		},
 

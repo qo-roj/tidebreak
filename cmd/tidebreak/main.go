@@ -5,10 +5,14 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/earl-sid/tidebreak/internal/audit"
 	"github.com/earl-sid/tidebreak/internal/config"
+	"github.com/earl-sid/tidebreak/internal/ollama"
+	"github.com/earl-sid/tidebreak/internal/proxy"
+	"github.com/earl-sid/tidebreak/internal/route"
 	"github.com/earl-sid/tidebreak/internal/rules"
 )
 
@@ -83,8 +87,37 @@ func cmdStart(args []string) {
 	fmt.Printf("   Preset: %s\n", cfg.Gateway.Preset)
 	fmt.Printf("   Ollama: %s (%s)\n", cfg.Local.OllamaURL, cfg.Local.OllamaModel)
 	fmt.Println()
-	fmt.Println("   Proxy not yet implemented — waiting on architecture decisions.")
-	fmt.Println("   Redaction engine, rules parser, and audit log are ready.")
+
+	// Initialize audit log
+	home, _ := os.UserHomeDir()
+	dataDir := filepath.Join(home, ".local", "share", "tidebreak")
+	os.MkdirAll(dataDir, 0755)
+	dbPath := filepath.Join(dataDir, "audit.db")
+	auditLog, err := audit.New(dbPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error opening audit log: %v\n", err)
+		os.Exit(1)
+	}
+	defer auditLog.Close()
+
+	// Initialize Ollama client
+	ollamaClient := ollama.New(cfg.Local.OllamaURL, cfg.Local.OllamaModel)
+	if ollamaClient.Available() {
+		fmt.Printf("   Ollama: ✓ available (%s)\n", cfg.Local.OllamaModel)
+	} else {
+		fmt.Printf("   Ollama: ✗ not available (local-only content will be blocked)\n")
+	}
+
+	// Initialize router
+	router := route.New(cfg.RuleSet, ollamaClient, auditLog)
+
+	// Initialize and start proxy
+	srv := proxy.New(router, auditLog, cfg.Gateway.Port)
+	fmt.Println()
+	if err := srv.Start(); err != nil {
+		fmt.Fprintf(os.Stderr, "Proxy error: %v\n", err)
+		os.Exit(1)
+	}
 }
 
 func cmdAudit(args []string) {

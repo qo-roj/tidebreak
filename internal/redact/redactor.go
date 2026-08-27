@@ -2,13 +2,16 @@
 // gateway. It scans content for sensitive data (IPs, emails, API keys, etc.)
 // and replaces matches with opaque tokens, maintaining an in-memory mapping
 // for reverse restoration in responses.
+//
+// Token format: [TB:CATEGORY:N] (e.g. [TB:IP:1], [TB:EMAIL:3])
+// The TB: prefix makes collisions with natural text extremely unlikely.
 package redact
 
 import (
 	"fmt"
 	"regexp"
+	"strings"
 	"sync"
-	"sync/atomic"
 )
 
 // Pattern defines a single redaction pattern.
@@ -23,16 +26,17 @@ type Pattern struct {
 // The mapping is never persisted, never logged, and is cleared after each
 // request completes.
 type Redactor struct {
-	patterns []*Pattern
-	mapping  map[string]string // token → original value
-	mu       sync.Mutex
-	counter  int64 // per-pattern counter for unique tokens
+	patterns    []*Pattern
+	mapping     map[string]string // token → original value
+	mu          sync.Mutex
+	counters    map[string]int64 // per-category counter for unique tokens
 }
 
 // New creates a Redactor with default patterns. Use WithPatterns to customize.
 func New() *Redactor {
 	return &Redactor{
 		mapping:  make(map[string]string),
+		counters: make(map[string]int64),
 		patterns: DefaultPatterns(),
 	}
 }
@@ -114,7 +118,7 @@ func (r *Redactor) Clear() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.mapping = make(map[string]string)
-	r.counter = 0
+	r.counters = make(map[string]int64)
 }
 
 // MappingCount returns how many redactions are stored (for audit logging).
@@ -125,6 +129,7 @@ func (r *Redactor) MappingCount() int {
 }
 
 // allocateToken creates a unique token for a matched value and stores the mapping.
+// Token format: [TB:CATEGORY:N] — e.g. [TB:IP:1], [TB:EMAIL:2]
 func (r *Redactor) allocateToken(p *Pattern, original string) string {
 	// Check if we already mapped this exact value
 	for token, val := range r.mapping {
@@ -133,22 +138,50 @@ func (r *Redactor) allocateToken(p *Pattern, original string) string {
 		}
 	}
 
-	n := atomic.AddInt64(&r.counter, 1)
-	prefix := tokenPrefix(p.Replacement)
-	token := fmt.Sprintf("%s%d]", prefix, n)
+	category := tokenCategory(p.Replacement)
+	n := r.counters[category] + 1
+	r.counters[category] = n
+	token := fmt.Sprintf("[TB:%s:%d]", category, n)
 	r.mapping[token] = original
 	return token
 }
 
-// tokenPrefix extracts the prefix from a replacement template like "[IP_REDACTED_%d]" → "[IP_REDACTED_".
-func tokenPrefix(template string) string {
-	// Templates are like "[IP_REDACTED_%d]" — strip the "%d]" suffix
-	for i := len(template) - 1; i >= 0; i-- {
-		if template[i] == '%' {
-			return template[:i]
+// tokenCategory extracts the category from a replacement template.
+// Old format: "[IP_REDACTED_%d]" → "IP"
+// New format: "[TB:IP:%d]" → "IP"
+// We use the pattern name's category prefix.
+func tokenCategory(template string) string {
+	// Extract category from the template: strip non-alpha chars from the prefix
+	// Templates like "[IP_REDACTED_%d]" → "IP"
+	// Or "[TB:IP:%d]" → "IP"
+	for i := 0; i < len(template); i++ {
+		c := template[i]
+		if c == ':' {
+			// New format [TB:CAT:N] — extract after TB:
+			if i+1 < len(template) {
+				rest := template[i+1:]
+				for j := 0; j < len(rest); j++ {
+					if rest[j] == ':' || rest[j] == '_' {
+						return strings.ToUpper(rest[:j])
+					}
+				}
+			}
 		}
 	}
-	return template
+	// Old format: extract uppercase letters before first non-alpha
+	category := ""
+	for i := 0; i < len(template); i++ {
+		c := template[i]
+		if c >= 'A' && c <= 'Z' {
+			category += string(c)
+		} else if c == '_' {
+			break
+		}
+	}
+	if category == "" {
+		return "REDACTED"
+	}
+	return category
 }
 
 // Summary maps pattern name → count of redactions.

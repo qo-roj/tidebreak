@@ -1,0 +1,206 @@
+package redact
+
+import (
+	"strings"
+	"testing"
+)
+
+func TestTokenMatcherExactMatch(t *testing.T) {
+	r := New()
+	defer r.Clear()
+
+	r.Redact("Server at 203.0.113.42 and admin@example.com")
+	tm := NewTokenMatcher(r)
+
+	content := "Check [TB:IP:1] and contact [TB:EMAIL:1]"
+	restored := tm.Restore(content)
+
+	if !strings.Contains(restored, "203.0.113.42") {
+		t.Error("expected IP to be restored")
+	}
+	if !strings.Contains(restored, "admin@example.com") {
+		t.Error("expected email to be restored")
+	}
+}
+
+func TestTokenMatcherFuzzyMatch(t *testing.T) {
+	r := New()
+	defer r.Clear()
+
+	r.Redact("IP 203.0.113.42")
+	tm := NewTokenMatcher(r)
+
+	tests := []string{
+		`"TB:IP:1"`,   // quotes
+		"`TB:IP:1`",   // backticks
+		`TB:IP:1`,     // no brackets
+		`TB_IP_1`,      // underscores
+	}
+
+	for _, fuzzy := range tests {
+		restored := tm.Restore(fuzzy)
+		if !strings.Contains(restored, "203.0.113.42") {
+			t.Errorf("fuzzy match %q → %q, expected IP restored", fuzzy, restored)
+		}
+	}
+}
+
+func TestTokenMatcherUnresolvedToken(t *testing.T) {
+	r := New()
+	defer r.Clear()
+
+	r.Redact("IP 203.0.113.42")
+	tm := NewTokenMatcher(r)
+
+	// Token that doesn't exist in the mapping
+	content := "Unknown [TB:IP:99] here"
+	restored := tm.Restore(content)
+
+	if !strings.Contains(restored, "[TB:IP:99]") {
+		t.Error("unresolved token should be left as-is")
+	}
+}
+
+func TestTokenMatcherUnresolvedTokensList(t *testing.T) {
+	r := New()
+	defer r.Clear()
+
+	r.Redact("IP 203.0.113.42")
+	tm := NewTokenMatcher(r)
+
+	content := "Known [TB:IP:1] and unknown [TB:IP:42] and also [TB:EMAIL:3]"
+	unresolved := tm.UnresolvedTokens(content)
+
+	if len(unresolved) != 2 {
+		t.Errorf("expected 2 unresolved tokens, got %d", len(unresolved))
+	}
+}
+
+func TestStreamRedactorBasic(t *testing.T) {
+	r := New()
+	defer r.Clear()
+
+	r.Redact("IP 203.0.113.42")
+	tm := NewTokenMatcher(r)
+	sr := NewStreamRedactor(tm)
+
+	// Single chunk with complete token
+	out := sr.ProcessChunk([]byte("The IP is [TB:IP:1] yes"))
+	if !strings.Contains(string(out), "203.0.113.42") {
+		t.Errorf("expected IP restored, got %q", out)
+	}
+}
+
+func TestStreamRedactorSplitToken(t *testing.T) {
+	r := New()
+	defer r.Clear()
+
+	r.Redact("IP 203.0.113.42")
+	tm := NewTokenMatcher(r)
+	sr := NewStreamRedactor(tm)
+
+	// Token split across two chunks
+	out1 := sr.ProcessChunk([]byte("The IP is [TB:IP:"))
+	if strings.Contains(string(out1), "203.0.113.42") {
+		t.Error("should not have restored yet — token is incomplete")
+	}
+
+	out2 := sr.ProcessChunk([]byte("1] confirmed"))
+	combined := string(out1) + string(out2)
+	if !strings.Contains(combined, "203.0.113.42") {
+		t.Errorf("expected IP restored after second chunk, got %q", combined)
+	}
+}
+
+func TestStreamRedactorNoMappings(t *testing.T) {
+	r := New()
+	defer r.Clear()
+
+	tm := NewTokenMatcher(r)
+	sr := NewStreamRedactor(tm)
+
+	// No mappings — should pass through unchanged
+	out := sr.ProcessChunk([]byte("hello world"))
+	if string(out) != "hello world" {
+		t.Errorf("expected passthrough, got %q", out)
+	}
+}
+
+func TestStreamRedactorFlush(t *testing.T) {
+	r := New()
+	defer r.Clear()
+
+	r.Redact("IP 203.0.113.42")
+	tm := NewTokenMatcher(r)
+	sr := NewStreamRedactor(tm)
+
+	// Send a chunk that leaves a partial token in the buffer
+	sr.ProcessChunk([]byte("IP is [TB:IP:"))
+	remaining := sr.Flush()
+	if len(remaining) == 0 {
+		t.Error("expected remaining buffer to be flushed")
+	}
+}
+
+func TestStreamRedactorMultipleTokens(t *testing.T) {
+	r := New()
+	defer r.Clear()
+
+	content := "IP 203.0.113.42 email admin@example.com token ghp_1234567890abcdefghijklmnopqrstuvwxyz1234"
+	r.Redact(content)
+	tm := NewTokenMatcher(r)
+	sr := NewStreamRedactor(tm)
+
+	// All three tokens in one chunk
+	out := sr.ProcessChunk([]byte("Found [TB:IP:1] [TB:EMAIL:1] [TB:TOKEN:1] done"))
+	outStr := string(out)
+
+	if !strings.Contains(outStr, "203.0.113.42") {
+		t.Error("expected IP restored")
+	}
+	if !strings.Contains(outStr, "admin@example.com") {
+		t.Error("expected email restored")
+	}
+	if !strings.Contains(outStr, "ghp_") {
+		t.Error("expected token restored")
+	}
+}
+
+func TestStreamRedactorNoFalseBuffer(t *testing.T) {
+	r := New()
+	defer r.Clear()
+
+	r.Redact("IP 203.0.113.42")
+	tm := NewTokenMatcher(r)
+	sr := NewStreamRedactor(tm)
+
+	// Text that ends with [ but is not a token
+	out1 := sr.ProcessChunk([]byte("array[0] = [TB:IP:1]"))
+	out2 := sr.ProcessChunk([]byte(" value[1]"))
+	combined := string(out1) + string(out2)
+
+	if !strings.Contains(combined, "203.0.113.42") {
+		t.Error("expected IP restored")
+	}
+	if !strings.Contains(combined, "array[0]") {
+		t.Error("expected array[0] to be preserved")
+	}
+}
+
+func TestSanitizeForLog(t *testing.T) {
+	s := "Redacted [TB:IP:1] with [TB:EMAIL:2]"
+	result := SanitizeForLog(s)
+	// Should keep tokens as-is (they don't contain original values)
+	if result != s {
+		t.Errorf("expected no change, got %q", result)
+	}
+}
+
+func TestIsTokenContent(t *testing.T) {
+	if !IsTokenContent("has [TB:IP:1] token") {
+		t.Error("expected true for content with token")
+	}
+	if IsTokenContent("no tokens here") {
+		t.Error("expected false for content without tokens")
+	}
+}

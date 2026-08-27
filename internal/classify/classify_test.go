@@ -1,0 +1,229 @@
+package classify
+
+import (
+	"encoding/json"
+	"testing"
+
+	"github.com/earl-sid/tidebreak/internal/rules"
+)
+
+func makeRuleSet() *rules.RuleSet {
+	cfg := &rules.Config{
+		Blocks:    []string{"/etc/shadow", "~/.ssh/id_*"},
+		LocalOnly: []string{"**/.env", "/etc/letsencrypt/"},
+		Redact:    []string{"/var/log/**", "~/.zsh_history"},
+	}
+	return rules.BuildRuleSet(cfg, "test")
+}
+
+func TestClassifyBlockPublic(t *testing.T) {
+	c := New(makeRuleSet())
+
+	block := ContentBlock{
+		Content: "You are a helpful coding agent.",
+		Role:    "system",
+	}
+
+	result := c.ClassifyBlock(block)
+	if result.Tier != rules.TierPublic {
+		t.Errorf("expected public, got %s", result.Tier)
+	}
+}
+
+func TestClassifyBlockBlockedByPath(t *testing.T) {
+	c := New(makeRuleSet())
+
+	block := ContentBlock{
+		Content:  "root:$6$xyz...:19000:0:99999:7:::",
+		FilePath: "/etc/shadow",
+		Role:     "user",
+	}
+
+	result := c.ClassifyBlock(block)
+	if result.Tier != rules.TierBlocked {
+		t.Errorf("expected blocked, got %s", result.Tier)
+	}
+}
+
+func TestClassifyBlockRedactedByPath(t *testing.T) {
+	c := New(makeRuleSet())
+
+	block := ContentBlock{
+		Content: "server is starting up...",
+		FilePath: "/var/log/syslog",
+		Role:    "user",
+	}
+
+	result := c.ClassifyBlock(block)
+	if result.Tier != rules.TierRedacted {
+		t.Errorf("expected redacted, got %s", result.Tier)
+	}
+}
+
+func TestClassifyBlockLocalOnlyByPath(t *testing.T) {
+	c := New(makeRuleSet())
+
+	block := ContentBlock{
+		Content:  "DATABASE_URL=postgres://user:pass@host/db",
+		FilePath: "project/.env",
+		Role:     "user",
+	}
+
+	result := c.ClassifyBlock(block)
+	if result.Tier != rules.TierLocalOnly {
+		t.Errorf("expected local-only, got %s", result.Tier)
+	}
+}
+
+func TestClassifyBlockContentContainsPath(t *testing.T) {
+	c := New(makeRuleSet())
+
+	block := ContentBlock{
+		Content: "I read /etc/shadow and found the root hash",
+		Role:    "user",
+	}
+
+	result := c.ClassifyBlock(block)
+	if result.Tier != rules.TierBlocked {
+		t.Errorf("expected blocked due to /etc/shadow in content, got %s", result.Tier)
+	}
+}
+
+func TestClassifyBlockContentContainsLogPath(t *testing.T) {
+	c := New(makeRuleSet())
+
+	block := ContentBlock{
+		Content: "Check /var/log/nginx/access.log for errors",
+		Role:    "user",
+	}
+
+	result := c.ClassifyBlock(block)
+	if result.Tier != rules.TierRedacted {
+		t.Errorf("expected redacted due to /var/log/ path in content, got %s", result.Tier)
+	}
+}
+
+func TestParseRequestOpenAI(t *testing.T) {
+	body := json.RawMessage(`{
+		"model": "gpt-4",
+		"messages": [
+			{"role": "system", "content": "You are a coding agent."},
+			{"role": "user", "content": "Read /etc/nginx/nginx.conf and show me the config"}
+		]
+	}`)
+
+	blocks := ParseRequest(body)
+	if len(blocks) != 2 {
+		t.Fatalf("expected 2 blocks, got %d", len(blocks))
+	}
+
+	if blocks[0].Role != "system" {
+		t.Error("first block should be system")
+	}
+	if blocks[1].Role != "user" {
+		t.Error("second block should be user")
+	}
+	if !blocks[0].IsSystemBlock {
+		t.Error("system block should have IsSystemBlock=true")
+	}
+}
+
+func TestParseRequestAnthropic(t *testing.T) {
+	body := json.RawMessage(`{
+		"model": "claude-opus-4-20250514",
+		"messages": [
+			{
+				"role": "user",
+				"content": [
+					{"type": "text", "text": "Here's my config:"},
+					{"type": "text", "text": "/etc/nginx/nginx.conf"}
+				]
+			}
+		]
+	}`)
+
+	blocks := ParseRequest(body)
+	if len(blocks) != 1 {
+		t.Fatalf("expected 1 block, got %d", len(blocks))
+	}
+	if blocks[0].Role != "user" {
+		t.Error("expected user role")
+	}
+	if blocks[0].Content == "" {
+		t.Error("expected non-empty content")
+	}
+}
+
+func TestParseRequestWithToolResult(t *testing.T) {
+	body := json.RawMessage(`{
+		"messages": [
+			{"role": "user", "content": "read /etc/shadow"},
+			{"role": "assistant", "tool_calls": [{"id": "1", "function": {"name": "read_file"}}]},
+			{"role": "tool", "tool_call_id": "1", "content": "root:$6$..."}
+		]
+	}`)
+
+	blocks := ParseRequest(body)
+	if len(blocks) != 3 {
+		t.Fatalf("expected 3 blocks, got %d", len(blocks))
+	}
+	if !blocks[1].IsToolResult {
+		t.Error("assistant block with tool_calls should be tool result")
+	}
+	if !blocks[2].IsToolResult {
+		t.Error("tool block should be tool result")
+	}
+}
+
+func TestEscalateTier(t *testing.T) {
+	tests := []struct {
+		a, b, want rules.Tier
+	}{
+		{rules.TierPublic, rules.TierRedacted, rules.TierRedacted},
+		{rules.TierRedacted, rules.TierLocalOnly, rules.TierLocalOnly},
+		{rules.TierLocalOnly, rules.TierBlocked, rules.TierBlocked},
+		{rules.TierPublic, rules.TierPublic, rules.TierPublic},
+	}
+
+	for _, tc := range tests {
+		got := EscalateTier(tc.a, tc.b)
+		if got != tc.want {
+			t.Errorf("EscalateTier(%s, %s) = %s, want %s", tc.a, tc.b, got, tc.want)
+		}
+	}
+}
+
+func TestExtractPaths(t *testing.T) {
+	content := "I read /etc/shadow and ~/.zsh_history then checked /var/log/syslog"
+	paths := extractPaths(content)
+
+	if len(paths) < 2 {
+		t.Errorf("expected at least 2 paths, got %d: %v", len(paths), paths)
+	}
+
+	found := make(map[string]bool)
+	for _, p := range paths {
+		found[p] = true
+	}
+	if !found["/etc/shadow"] {
+		t.Error("expected /etc/shadow in paths")
+	}
+	if !found["/var/log/syslog"] {
+		t.Error("expected /var/log/syslog in paths")
+	}
+}
+
+func TestClassifyBlockSSSKey(t *testing.T) {
+	c := New(makeRuleSet())
+
+	block := ContentBlock{
+		Content:  "My private key is at ~/.ssh/id_ed25519",
+		FilePath: "~/.ssh/id_ed25519",
+		Role:     "user",
+	}
+
+	result := c.ClassifyBlock(block)
+	if result.Tier != rules.TierBlocked {
+		t.Errorf("expected blocked for SSH key, got %s", result.Tier)
+	}
+}
