@@ -1,0 +1,221 @@
+# Tidebreak — Architecture
+
+## Overview
+
+Tidebreak is a local HTTPS proxy daemon that intercepts, classifies, redacts, and routes
+LLM API calls between AI coding agents and cloud providers.
+
+```
+                                    ┌──────────────┐
+                                    │  Agent CLI   │
+                                    │ (Claude etc) │
+                                    └──────┬───────┘
+                                           │ HTTP(S) request
+                                           │ (to localhost:8842)
+                                           ▼
+┌──────────────────────────────────────────────────────────────┐
+│  Tidebreak Gateway (localhost:8842)                          │
+│                                                              │
+│  ┌─────────────┐    ┌──────────────┐    ┌──────────────┐     │
+│  │  Proxy      │───▶│  Classifier  │───▶│  Redactor   │     │
+│  │  (intercept │    │  (classify   │    │  (replace   │     │
+│  │   request)  │    │   content)   │    │   sensitive  │     │
+│  └─────────────┘    └──────────────┘    │   patterns)  │     │
+│                                          └──────┬───────┘     │
+│                                                  │             │
+│                                          ┌───────┴───────┐    │
+│                                          ▼               ▼    │
+│                                   ┌────────────┐  ┌────────┐  │
+│                                   │  Router     │  │ Audit │  │
+│                                   │  (cloud or  │  │ Log   │  │
+│                                   │   local)    │  │       │  │
+│                                   └─────┬──────┘  └────────┘  │
+│                                         │                     │
+└─────────────────────────────────────────┼─────────────────────┘
+                                          │
+                          ┌───────────────┴───────────────┐
+                          ▼                               ▼
+                   ┌──────────────┐              ┌──────────────┐
+                   │  Cloud API   │              │  Local Ollama│
+                   │  (scrubbed)  │              │  (full data)  │
+                   │              │              │              │
+                   │ api.anthropic│              │ localhost:   │
+                   │ api.openai   │              │ 11434        │
+                   └──────────────┘              └──────────────┘
+```
+
+## Component Details
+
+### 1. Proxy Server (`internal/proxy/`)
+
+- Go `net/http` reverse proxy with TLS interception
+- Listens on `localhost:8842` by default
+- Routes based on path prefix:
+  - `/anthropic/*` → Anthropic API
+  - `/openai/*` → OpenAI API
+  - `/xai/*` → xAI API
+  - `/ollama/*` → local Ollama (passthrough, no redaction needed)
+- Transparent to agents — they just hit `localhost:8842` instead of the real API
+
+### 2. Classifier (`internal/classify/`)
+
+Scans request content and assigns a tier to each piece:
+
+```go
+type Tier int
+
+const (
+    TierPublic   Tier = iota  // send to cloud as-is
+    TierRedacted              // scrub patterns, then send
+    TierLocalOnly             // route to Ollama only
+    TierBlocked               // refuse access entirely
+)
+```
+
+Classification sources:
+- **Path rules** — from config file (`block`, `local-only`, `redact` sections)
+- **Pattern matches** — regex patterns for IPs, emails, API keys, etc.
+- **Content heuristics** — if a file path appears in the request, classify based on the path rules
+
+### 3. Redactor (`internal/redact/`)
+
+- Applies regex replacements based on enabled patterns
+- Maintains an in-memory `map[string]string` mapping redaction tokens back to originals
+- Reverse-maps tokens in response content so the agent can act on real values
+- Never persists the mapping table — destroyed when the request completes
+
+```go
+type Redactor struct {
+    patterns []*Pattern
+    mapping  map[string]string  // [IP_REDACTED_1] → 203.0.113.42
+    mu       sync.Mutex
+}
+
+func (r *Redactor) Redact(content string) string
+func (r *Redactor) Restore(content string) string
+```
+
+### 4. Router (`internal/route/`)
+
+Decision logic for where content goes:
+
+```
+Content tier = PUBLIC    → forward to original cloud API (as-is)
+Content tier = REDACTED  → run redactor → forward to cloud API (scrubbed)
+Content tier = LOCAL_ONLY→ send to Ollama → get summary → forward summary to cloud
+Content tier = BLOCKED   → return error to agent: "access denied by Tidebreak"
+```
+
+For `LOCAL_ONLY` with Ollama:
+1. Send raw content to local Ollama with a prompt: "Summarize this for an AI coding agent. Remove all PII, IPs, emails, credentials. Keep technical details: error messages, config keys, service names, query patterns."
+2. Ollama returns a de-identified summary
+3. The summary is sent to the cloud model as the agent's context
+
+If no Ollama is configured, `LOCAL_ONLY` content is blocked entirely.
+
+### 5. Audit Log (`internal/audit/`)
+
+SQLite database at `~/.local/share/tidebreak/audit.db`
+
+Tables:
+```sql
+CREATE TABLE audit_entries (
+    id          INTEGER PRIMARY KEY,
+    timestamp   DATETIME NOT NULL,
+    agent       TEXT NOT NULL,         -- "claude", "codex", etc
+    provider    TEXT NOT NULL,         -- "anthropic", "openai", "ollama"
+    action      TEXT NOT NULL,         -- "read", "write", "query", "exec"
+    target      TEXT,                  -- file path, command, query
+    tier        TEXT NOT NULL,         -- "public", "redacted", "local_only", "blocked"
+    redactions  TEXT,                  -- JSON: {"ips": 3, "emails": 2, ...}
+    approved    BOOLEAN DEFAULT 0,
+    notes       TEXT
+);
+```
+
+CLI query:
+```bash
+tidebreak audit                    # last 24h summary
+tidebreak audit --live             # tail -f style
+tidebreak audit --agent claude     # filter by agent
+tidebreak audit --since 2h         # last 2 hours
+tidebreak audit --detail <id>      # full entry detail
+tidebreak audit --export > log.json # export for compliance
+```
+
+### 6. Ollama Integration (`internal/ollama/`)
+
+- Connects to local Ollama at `http://localhost:11434` by default
+- Uses a configured model (default: `llama3:8b`)
+- Sends a summarization prompt for `local-only` content
+- Returns the de-identified summary for cloud forwarding
+- If Ollama is down, falls back to blocking `local-only` content
+
+## Request Flow (Detailed)
+
+```
+1. Agent sends request to localhost:8842/anthropic/v1/messages
+   Body: {
+     "model": "claude-opus-4-20250514",
+     "messages": [
+       {"role": "user", "content": "Here's my nginx config: <file content>..."}
+     ]
+   }
+
+2. Proxy receives request, extracts message content
+
+3. Classifier scans content:
+   - "<file content>" matches path rule for /etc/nginx/ → tier: REDACTED
+   - File contains: server_name myapp.com; → email pattern? No. IP? No.
+   - File contains: ssl_certificate /etc/letsencrypt/live/myapp.com/... → path rule → local-only for letsencrypt
+   - Result: mixed tiers within one request
+
+4. Redactor processes REDACTED content:
+   - Scans for patterns
+   - Finds: 203.0.113.42 in a log line → replaces with [IP_REDACTED_1]
+   - Finds: admin@myapp.com → replaces with [EMAIL_REDACTED_1]
+   - Keeps mapping in memory
+
+5. Router:
+   - Public portions → forward as-is
+   - Redacted portions → forward with replacements
+   - Local-only portions → send to Ollama for summarization → forward summary
+   - Blocked portions → remove from request, log as blocked
+
+6. Cloud API receives scrubbed request, returns response
+
+7. Redactor reverse-maps response:
+   - If cloud says "check [IP_REDACTED_1]" → restore to "check 203.0.113.42"
+   - Agent sees real values in the response
+
+8. Audit log records:
+   - agent=claude, action=read, target=/etc/nginx/nginx.conf
+   - tier=redacted, redactions={"ips":1,"emails":1}
+   - provider=anthropic, approved=true (auto-rule)
+
+9. Agent receives response, continues working
+```
+
+## Configuration Resolution Order
+
+1. Built-in defaults (`rules/defaults.conf`)
+2. Preset rules (`rules/presets/desktop.conf` or `server.conf`)
+3. User config (`~/.config/tidebreak/tidebreak.conf`)
+4. Project-local config (`./.tidebreak.conf` — overrides user config)
+5. CLI flags (highest priority)
+
+## Performance Considerations
+
+- Redaction is regex-based — O(n) in content size per pattern
+- Typical agent request: 10-100KB → sub-millisecond redaction
+- Ollama summarization adds latency for local-only content (1-5s)
+- Audit log is async (buffered write queue), non-blocking
+- Proxy adds <1ms overhead for pass-through (public content)
+
+## Security Considerations
+
+- The mapping table (redaction token → original) lives in process memory only
+- Never written to disk, never logged, never sent anywhere
+- Cleared after each request completes
+- Process runs as user (not root), reads only files the user can read
+- The proxy itself is localhost-only — no remote access to the gateway
