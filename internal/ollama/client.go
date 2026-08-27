@@ -35,19 +35,17 @@ Output only the summary, no preamble.`
 
 // Client connects to a local Ollama instance.
 type Client struct {
-	URL       string
-	Model     string
-	HTTP      *http.Client
-	Redactor  *redact.Redactor // for stage-2 pattern redaction
+	URL   string
+	Model string
+	HTTP  *http.Client
 }
 
 // New creates an Ollama client. url is typically http://localhost:11434.
 func New(url, model string) *Client {
 	return &Client{
-		URL:      url,
-		Model:    model,
-		HTTP:     &http.Client{Timeout: 60 * time.Second},
-		Redactor: redact.New(),
+		URL:   url,
+		Model: model,
+		HTTP:  &http.Client{Timeout: 60 * time.Second},
 	}
 }
 
@@ -77,8 +75,10 @@ func (c *Client) Summarize(content string) (string, error) {
 	}
 
 	// Stage 2: Pattern redaction on the summary
-	c.Redactor.Clear()
-	scrubbed, _ := c.Redactor.Redact(summary)
+	// Per-call Redactor prevents concurrent cross-contamination
+	redactor := redact.New()
+	defer redactor.Clear()
+	scrubbed, _ := redactor.Redact(summary)
 
 	return scrubbed, nil
 }
@@ -125,9 +125,6 @@ func (c *Client) Available() bool {
 	return resp.StatusCode == http.StatusOK
 }
 
-// Close cleans up the redactor.
+// Close is a no-op (kept for API compatibility).
 func (c *Client) Close() {
-	if c.Redactor != nil {
-		c.Redactor.Clear()
-	}
 }

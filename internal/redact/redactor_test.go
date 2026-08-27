@@ -26,6 +26,46 @@ func TestRedactIPv4(t *testing.T) {
 	}
 }
 
+// TestRedactDistinctValuesGetDistinctTokens is a regression test for the
+// critical bug where ReplaceAllString collapsed all distinct values matching
+// the same pattern to a single token. Two different IPs should get two
+// different tokens, and Restore() should map each back to the correct value.
+func TestRedactDistinctValuesGetDistinctTokens(t *testing.T) {
+	r := New()
+	defer r.Clear()
+
+	content := "Server A is 203.0.113.42, server B is 10.0.0.1, server C is 203.0.113.42"
+	redacted, summary := r.Redact(content)
+
+	if summary["ipv4"] != 3 {
+		t.Errorf("expected 3 IPv4 matches, got %d", summary["ipv4"])
+	}
+
+	// Two distinct IPs should get two distinct tokens
+	tokenA := "[TB:IP:1]"
+	tokenB := "[TB:IP:2]"
+	if !strings.Contains(redacted, tokenA) {
+		t.Errorf("expected token %s in redacted output: %s", tokenA, redacted)
+	}
+	if !strings.Contains(redacted, tokenB) {
+		t.Errorf("expected token %s in redacted output: %s", tokenB, redacted)
+	}
+
+	// Restore should map each token back to the correct IP
+	restored := r.Restore(redacted)
+	if !strings.Contains(restored, "203.0.113.42") {
+		t.Error("Restore should contain 203.0.113.42")
+	}
+	if !strings.Contains(restored, "10.0.0.1") {
+		t.Error("Restore should contain 10.0.0.1")
+	}
+	// The duplicate IP should appear twice in the restored output
+	count := strings.Count(restored, "203.0.113.42")
+	if count != 2 {
+		t.Errorf("expected 203.0.113.42 to appear 2 times in restored, got %d", count)
+	}
+}
+
 func TestRedactEmail(t *testing.T) {
 	r := New()
 	defer r.Clear()

@@ -81,11 +81,11 @@ func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
 	r.Body.Close()
 
 	// Process the request through the router (classify, redact, route)
-	modifiedBody, blocked, err := s.Router.ProcessRequest(body, agent, provider)
+	ctx, modifiedBody, blocked, err := s.Router.ProcessRequest(body, agent, provider)
 	if err != nil {
-		log.Printf("router error: %v", err)
-		// On error, pass through the original (safer than blocking)
-		modifiedBody = body
+		// Fail-closed: do not forward unredacted content on router error
+		http.Error(w, "gateway processing error", http.StatusBadGateway)
+		return
 	}
 
 	if blocked {
@@ -123,22 +123,22 @@ func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
 	isStreaming := strings.Contains(contentType, "text/event-stream")
 
 	if isStreaming {
-		s.handleStreamingResponse(w, resp, modifiedBody)
+		s.handleStreamingResponse(w, resp, ctx)
 	} else {
-		s.handleBatchResponse(w, resp, modifiedBody)
+		s.handleBatchResponse(w, resp, ctx)
 	}
 }
 
 // handleBatchResponse handles non-streaming responses.
-func (s *Server) handleBatchResponse(w http.ResponseWriter, resp *http.Response, requestBody []byte) {
+func (s *Server) handleBatchResponse(w http.ResponseWriter, resp *http.Response, ctx *route.RequestContext) {
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		http.Error(w, "reading upstream response", http.StatusBadGateway)
 		return
 	}
 
-	// Reverse-map tokens in the response
-	processed := s.Router.ProcessResponse(respBody)
+	// Reverse-map tokens in the response using the per-request context
+	processed := s.Router.ProcessResponse(ctx, respBody)
 
 	// Copy response headers
 	for k, v := range resp.Header {
@@ -151,11 +151,13 @@ func (s *Server) handleBatchResponse(w http.ResponseWriter, resp *http.Response,
 
 // handleStreamingResponse handles SSE streaming responses.
 // It pipes chunks through the stream redactor for token reverse-mapping.
-func (s *Server) handleStreamingResponse(w http.ResponseWriter, resp *http.Response, requestBody []byte) {
+// The StreamRedactor is created once per response to maintain the boundary
+// buffer across chunks.
+func (s *Server) handleStreamingResponse(w http.ResponseWriter, resp *http.Response, ctx *route.RequestContext) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		// Fallback to batch mode if flushing not supported
-		s.handleBatchResponse(w, resp, requestBody)
+		s.handleBatchResponse(w, resp, ctx)
 		return
 	}
 
@@ -165,17 +167,35 @@ func (s *Server) handleStreamingResponse(w http.ResponseWriter, resp *http.Respo
 	}
 	w.WriteHeader(resp.StatusCode)
 
+	// Create one StreamRedactor per response — the boundary buffer
+	// must persist across chunks to handle tokens split at boundaries
+	sr := s.Router.NewStreamRedactor(ctx)
+
 	buf := make([]byte, 4096)
 	for {
 		n, err := resp.Body.Read(buf)
 		if n > 0 {
 			chunk := buf[:n]
-			processed := s.Router.ProcessStreamChunk(chunk)
+			var processed []byte
+			if sr != nil {
+				processed = s.Router.ProcessStreamChunk(ctx, sr, chunk)
+			} else {
+				processed = chunk
+			}
 			w.Write(processed)
 			flusher.Flush()
 		}
 		if err != nil {
 			break
+		}
+	}
+
+	// Flush any remaining buffer
+	if sr != nil {
+		remaining := sr.Flush()
+		if len(remaining) > 0 {
+			w.Write(remaining)
+			flusher.Flush()
 		}
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/earl-sid/tidebreak/internal/ollama"
+	"github.com/earl-sid/tidebreak/internal/redact"
 	"github.com/earl-sid/tidebreak/internal/rules"
 )
 
@@ -39,12 +40,15 @@ func TestProcessRequestPublic(t *testing.T) {
 		{"role": "user", "content": "What is 2+2?"},
 	})
 
-	modified, blocked, err := router.ProcessRequest(body, "test", "openai")
+	ctx, modified, blocked, err := router.ProcessRequest(body, "test", "openai")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if blocked {
 		t.Error("expected not blocked")
+	}
+	if ctx == nil {
+		t.Fatal("expected non-nil RequestContext")
 	}
 
 	// Content should be unchanged
@@ -60,22 +64,21 @@ func TestProcessRequestPublic(t *testing.T) {
 func TestProcessRequestBlocked(t *testing.T) {
 	router := makeTestRouter(t, nil)
 
-	body := makeRequestBody(t, []map[string]interface{}{
-		{"role": "user", "content": "root:$6$xyz...", "file_path": "/etc/shadow"},
-	})
-
 	// The classifier looks at FilePath, but the message doesn't carry that.
-	// Instead, let's test with content that contains /etc/shadow
-	body = makeRequestBody(t, []map[string]interface{}{
+	// Test with content that contains /etc/shadow
+	body := makeRequestBody(t, []map[string]interface{}{
 		{"role": "user", "content": "I read /etc/shadow and found hashes"},
 	})
 
-	modified, blocked, err := router.ProcessRequest(body, "test", "openai")
+	ctx, modified, blocked, err := router.ProcessRequest(body, "test", "openai")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !blocked {
 		t.Error("expected blocked for /etc/shadow reference")
+	}
+	if ctx == nil {
+		t.Fatal("expected non-nil RequestContext")
 	}
 
 	var req map[string]interface{}
@@ -95,12 +98,15 @@ func TestProcessRequestRedacted(t *testing.T) {
 		{"role": "user", "content": "Check /var/log/syslog which has IP 203.0.113.42"},
 	})
 
-	modified, blocked, err := router.ProcessRequest(body, "test", "openai")
+	ctx, modified, blocked, err := router.ProcessRequest(body, "test", "openai")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if blocked {
 		t.Error("expected not blocked")
+	}
+	if ctx == nil {
+		t.Fatal("expected non-nil RequestContext")
 	}
 
 	// The IP should be redacted in the modified body
@@ -124,22 +130,20 @@ func TestProcessRequestLocalOnlyWithOllama(t *testing.T) {
 	client := ollama.New(server.URL, "test-model")
 	router := makeTestRouter(t, client)
 
+	// The classifier needs to see the file path. Test with content that references .env
 	body := makeRequestBody(t, []map[string]interface{}{
-		{"role": "user", "content": "DATABASE_URL=postgres://user:pass@host/db", "file_path": "project/.env"},
-	})
-
-	// The classifier needs to see the file path. Since we can't set it
-	// in the message JSON, test with content that references .env
-	body = makeRequestBody(t, []map[string]interface{}{
 		{"role": "user", "content": "Read the file project/.env for DB config"},
 	})
 
-	modified, blocked, err := router.ProcessRequest(body, "test", "openai")
+	ctx, modified, blocked, err := router.ProcessRequest(body, "test", "openai")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if blocked {
 		t.Error("expected not blocked for local-only with Ollama available")
+	}
+	if ctx == nil {
+		t.Fatal("expected non-nil RequestContext")
 	}
 
 	// Should contain the Ollama summary
@@ -154,14 +158,16 @@ func TestProcessRequestLocalOnlyWithOllama(t *testing.T) {
 func TestProcessResponseTokenRestore(t *testing.T) {
 	router := makeTestRouter(t, nil)
 
-	// First, redact some content to populate the mapping
-	router.Redactor.Clear()
-	router.Redactor.Redact("IP 203.0.113.42 and admin@example.com")
+	// Use a per-request redactor as the new API requires
+	redactor := redact.New()
+	defer redactor.Clear()
+	redactor.Redact("IP 203.0.113.42 and admin@example.com")
+	ctx := &RequestContext{Redactor: redactor}
 
 	// Simulate a cloud response that includes tokens
 	responseBody := `{"content": "The IP [TB:IP:1] is reachable and email [TB:EMAIL:1] is valid"}`
 
-	processed := router.ProcessResponse([]byte(responseBody))
+	processed := router.ProcessResponse(ctx, []byte(responseBody))
 
 	processedStr := string(processed)
 	if !containsStr(processedStr, "203.0.113.42") {
@@ -174,11 +180,14 @@ func TestProcessResponseTokenRestore(t *testing.T) {
 
 func TestProcessResponseNoMappings(t *testing.T) {
 	router := makeTestRouter(t, nil)
-	router.Redactor.Clear()
 
 	// No mappings — response should pass through unchanged
+	redactor := redact.New()
+	defer redactor.Clear()
+	ctx := &RequestContext{Redactor: redactor}
+
 	responseBody := `{"content": "no tokens here"}`
-	processed := router.ProcessResponse([]byte(responseBody))
+	processed := router.ProcessResponse(ctx, []byte(responseBody))
 
 	if string(processed) != responseBody {
 		t.Error("expected passthrough when no mappings")
@@ -188,7 +197,7 @@ func TestProcessResponseNoMappings(t *testing.T) {
 func TestProcessRequestEmptyBody(t *testing.T) {
 	router := makeTestRouter(t, nil)
 
-	modified, blocked, err := router.ProcessRequest([]byte{}, "test", "openai")
+	ctx, modified, blocked, err := router.ProcessRequest([]byte{}, "test", "openai")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -198,12 +207,15 @@ func TestProcessRequestEmptyBody(t *testing.T) {
 	if len(modified) != 0 {
 		t.Error("expected empty body to pass through")
 	}
+	if ctx == nil {
+		t.Error("expected non-nil RequestContext")
+	}
 }
 
 func TestProcessRequestUnparseableBody(t *testing.T) {
 	router := makeTestRouter(t, nil)
 
-	modified, blocked, err := router.ProcessRequest([]byte("not json"), "test", "openai")
+	ctx, modified, blocked, err := router.ProcessRequest([]byte("not json"), "test", "openai")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -213,6 +225,60 @@ func TestProcessRequestUnparseableBody(t *testing.T) {
 	// Should pass through as-is
 	if string(modified) != "not json" {
 		t.Error("expected passthrough for unparseable body")
+	}
+	if ctx == nil {
+		t.Error("expected non-nil RequestContext")
+	}
+}
+
+func TestProcessRequestConcurrentNoCrossContamination(t *testing.T) {
+	router := makeTestRouter(t, nil)
+
+	// Request A: redact IP 203.0.113.42
+	bodyA := makeRequestBody(t, []map[string]interface{}{
+		{"role": "user", "content": "Check /var/log/syslog with IP 203.0.113.42"},
+	})
+	ctxA, modifiedA, _, err := router.ProcessRequest(bodyA, "agent-a", "openai")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ctxA == nil {
+		t.Fatal("expected non-nil ctxA")
+	}
+
+	// Request B: redact a different IP
+	bodyB := makeRequestBody(t, []map[string]interface{}{
+		{"role": "user", "content": "Check /var/log/auth.log with IP 10.0.0.5"},
+	})
+	ctxB, modifiedB, _, err := router.ProcessRequest(bodyB, "agent-b", "openai")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ctxB == nil {
+		t.Fatal("expected non-nil ctxB")
+	}
+
+	// Both requests should have their own mappings — no cross-contamination
+	// A's response should restore 203.0.113.42, not 10.0.0.5
+	respA := `{"content": "IP [TB:IP:1] is reachable"}`
+	processedA := router.ProcessResponse(ctxA, []byte(respA))
+	if !containsStr(string(processedA), "203.0.113.42") {
+		t.Errorf("expected ctxA to restore 203.0.113.42, got: %s", string(processedA))
+	}
+
+	// B's response should restore 10.0.0.5
+	respB := `{"content": "IP [TB:IP:1] is reachable"}`
+	processedB := router.ProcessResponse(ctxB, []byte(respB))
+	if !containsStr(string(processedB), "10.0.0.5") {
+		t.Errorf("expected ctxB to restore 10.0.0.5, got: %s", string(processedB))
+	}
+
+	// Verify the modified bodies have different IPs redacted
+	if containsStr(string(modifiedA), "203.0.113.42") {
+		t.Error("modifiedA should not contain raw IP")
+	}
+	if containsStr(string(modifiedB), "10.0.0.5") {
+		t.Error("modifiedB should not contain raw IP")
 	}
 }
 

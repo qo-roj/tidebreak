@@ -16,10 +16,17 @@ import (
 	"github.com/earl-sid/tidebreak/internal/rules"
 )
 
+// RequestContext holds per-request state (primarily the redactor mapping)
+// that must be shared between ProcessRequest and the corresponding
+// ProcessResponse/ProcessStreamChunk. This prevents concurrent requests
+// from cross-contaminating each other's token mappings.
+type RequestContext struct {
+	Redactor *redact.Redactor
+}
+
 // Router coordinates the classification, redaction, and routing of content.
 type Router struct {
-	Classifier  *classify.Classifier
-	Redactor    *redact.Redactor
+	Classifier *classify.Classifier
 	Ollama      *ollama.Client
 	AuditLog    *audit.Log
 }
@@ -28,7 +35,6 @@ type Router struct {
 func New(rs *rules.RuleSet, ollamaClient *ollama.Client, auditLog *audit.Log) *Router {
 	return &Router{
 		Classifier: classify.New(rs),
-		Redactor:   redact.New(),
 		Ollama:     ollamaClient,
 		AuditLog:   auditLog,
 	}
@@ -40,43 +46,49 @@ func New(rs *rules.RuleSet, ollamaClient *ollama.Client, auditLog *audit.Log) *R
 // and replaced with a de-identified summary.
 //
 // Returns:
+//   - ctx: per-request RequestContext holding the redactor mapping for response restoration
 //   - modifiedBody: the request body with redactions/summaries applied
 //   - blocked: true if any block was blocked (caller should return error)
 //   - error: for unexpected failures
-func (r *Router) ProcessRequest(body []byte, agent string, provider string) (modifiedBody []byte, blocked bool, err error) {
+func (r *Router) ProcessRequest(body []byte, agent string, provider string) (ctx *RequestContext, modifiedBody []byte, blocked bool, err error) {
 	// Parse the request into content blocks
 	blocks := classify.ParseRequest(body)
 	if len(blocks) == 0 {
 		// Can't parse — let it through as-is (better than blocking)
-		return body, false, nil
+		return &RequestContext{Redactor: redact.New()}, body, false, nil
 	}
 
 	// Parse as generic JSON for modification
 	var request map[string]interface{}
 	if err := json.Unmarshal(body, &request); err != nil {
-		return body, false, nil // unparseable — pass through
+		return &RequestContext{Redactor: redact.New()}, body, false, nil // unparseable — pass through
 	}
 
 	messages, ok := request["messages"].([]interface{})
 	if !ok {
-		return body, false, nil
+		return &RequestContext{Redactor: redact.New()}, body, false, nil
 	}
 
-	r.Redactor.Clear()
+	// Per-request Redactor — prevents concurrent cross-contamination
+	reqRedactor := redact.New()
+	ctx = &RequestContext{Redactor: reqRedactor}
+
 	var redactionSummary redact.Summary = make(redact.Summary)
 	anyBlocked := false
 
-	for i, msg := range messages {
+	blockIdx := 0
+	for _, msg := range messages {
 		m, ok := msg.(map[string]interface{})
 		if !ok {
 			continue
 		}
 
-		if i >= len(blocks) {
+		if blockIdx >= len(blocks) {
 			break
 		}
 
-		block := blocks[i]
+		block := blocks[blockIdx]
+		blockIdx++
 		result := r.Classifier.ClassifyBlock(block)
 
 		switch result.Tier {
@@ -143,7 +155,7 @@ func (r *Router) ProcessRequest(body []byte, agent string, provider string) (mod
 		case rules.TierRedacted:
 			// Apply pattern redaction to content
 			content := getBlockContent(m)
-			redacted, summary := r.Redactor.Redact(content)
+			redacted, summary := reqRedactor.Redact(content)
 			setMessageContent(m, redacted)
 			for k, v := range summary {
 				redactionSummary[k] += v
@@ -177,16 +189,20 @@ func (r *Router) ProcessRequest(body []byte, agent string, provider string) (mod
 	// Serialize the modified request
 	modified, err := json.Marshal(request)
 	if err != nil {
-		return body, anyBlocked, nil
+		return ctx, body, anyBlocked, nil
 	}
 
-	return modified, anyBlocked, nil
+	return ctx, modified, anyBlocked, nil
 }
 
 // ProcessResponse reverse-maps redaction tokens in the cloud model's response.
 // This lets the agent see real values in the response instead of [TB:IP:1] tokens.
-func (r *Router) ProcessResponse(body []byte) []byte {
-	tm := redact.NewTokenMatcher(r.Redactor)
+// ctx carries the per-request redactor mapping from ProcessRequest.
+func (r *Router) ProcessResponse(ctx *RequestContext, body []byte) []byte {
+	if ctx == nil || ctx.Redactor == nil {
+		return body
+	}
+	tm := redact.NewTokenMatcher(ctx.Redactor)
 	if !tm.HasMappings() {
 		return body
 	}
@@ -209,14 +225,27 @@ func (r *Router) ProcessResponse(body []byte) []byte {
 
 // ProcessStreamChunk processes a single SSE streaming chunk from the cloud API.
 // It reverse-maps any tokens that appear in the chunk, handling split tokens
-// with a boundary buffer.
-func (r *Router) ProcessStreamChunk(chunk []byte) []byte {
-	tm := redact.NewTokenMatcher(r.Redactor)
-	if !tm.HasMappings() {
+// with a boundary buffer. The StreamRedactor is per-response — the caller
+// should create one and reuse it across all chunks for a given response.
+func (r *Router) ProcessStreamChunk(ctx *RequestContext, sr *redact.StreamRedactor, chunk []byte) []byte {
+	if ctx == nil || ctx.Redactor == nil || sr == nil {
 		return chunk
 	}
-	sr := redact.NewStreamRedactor(tm)
 	return sr.ProcessChunk(chunk)
+}
+
+// NewStreamRedactor creates a StreamRedactor for a streaming response,
+// using the per-request redactor mapping. Call once per response and reuse
+// across all chunks.
+func (r *Router) NewStreamRedactor(ctx *RequestContext) *redact.StreamRedactor {
+	if ctx == nil || ctx.Redactor == nil {
+		return nil
+	}
+	tm := redact.NewTokenMatcher(ctx.Redactor)
+	if !tm.HasMappings() {
+		return nil
+	}
+	return redact.NewStreamRedactor(tm)
 }
 
 // ProxyToUpstream forwards the (already redacted) request body to the

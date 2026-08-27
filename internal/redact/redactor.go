@@ -84,16 +84,17 @@ func (r *Redactor) Redact(content string) (string, Summary) {
 		if !p.Enabled {
 			continue
 		}
-		matches := p.Regex.FindAllString(result, -1)
-		if len(matches) == 0 {
-			continue
-		}
 
-		summary[p.Name] = len(matches)
-
-		for _, match := range matches {
-			token := r.allocateToken(p, match)
-			result = p.Regex.ReplaceAllString(result, token)
+		// Use ReplaceAllStringFunc so each distinct match value gets its own
+		// token. ReplaceAllString would replace ALL matches with a single token,
+		// collapsing distinct values (e.g. two different IPs → same token).
+		matchCount := 0
+		result = p.Regex.ReplaceAllStringFunc(result, func(match string) string {
+			matchCount++
+			return r.allocateToken(p, match)
+		})
+		if matchCount > 0 {
+			summary[p.Name] = matchCount
 		}
 	}
 
