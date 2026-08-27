@@ -104,6 +104,12 @@ func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
 	}
 	r.Body.Close()
 
+	// Guard against nil router (fail-closed)
+	if s.Router == nil {
+		http.Error(w, "gateway processing error", http.StatusBadGateway)
+		return
+	}
+
 	// Process the request through the router (classify, redact, route)
 	ctx, modifiedBody, blocked, err := s.Router.ProcessRequest(body, agent, provider)
 	if err != nil {
