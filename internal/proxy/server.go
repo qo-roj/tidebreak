@@ -24,6 +24,7 @@ var UpstreamRoutes = map[string]string{
 	"/anthropic": "api.anthropic.com",
 	"/openai":    "api.openai.com",
 	"/xai":       "api.x.ai",
+	"/mistral":   "api.mistral.ai",
 }
 
 // hopByHopHeaders are per-connection headers that must not be forwarded
