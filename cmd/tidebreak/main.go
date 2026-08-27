@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/earl-sid/tidebreak/internal/audit"
@@ -274,9 +275,12 @@ func parseSince(s string) time.Time {
 	}
 	// Convert "7d" to "168h" etc.
 	if len(s) > 1 && s[len(s)-1] == 'd' {
-		s = s[:len(s)-1] + "h"
-		// crude: multiply by 24
-		// TODO: use time.ParseDuration properly with day support
+		numStr := s[:len(s)-1]
+		n, err := strconv.Atoi(numStr)
+		if err != nil {
+			return time.Now().Add(-24 * time.Hour)
+		}
+		s = fmt.Sprintf("%dh", n*24)
 	}
 	d, err := time.ParseDuration(s)
 	if err != nil {

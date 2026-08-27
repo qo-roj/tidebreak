@@ -62,6 +62,16 @@ func Load(cliPort int, cliPreset string) (*AppConfig, error) {
 	// Start with empty merged config — rules are built from parsed configs
 	var mergedRules *rules.Config
 
+	// 2. Preset rules — load preset file if it exists
+	presetPath := filepath.Join("rules", "presets", cfg.Gateway.Preset+".conf")
+	if fileExists(presetPath) {
+		presetCfg, err := rules.ParseConfig(presetPath)
+		if err != nil {
+			return nil, fmt.Errorf("preset config: %w", err)
+		}
+		mergedRules = rules.MergeConfig(mergedRules, presetCfg)
+	}
+
 	// 3. User config
 	home, _ := os.UserHomeDir()
 	userConfigPath := filepath.Join(home, ".config", "tidebreak", "tidebreak.conf")

@@ -96,10 +96,38 @@ func (c *Classifier) ClassifyBlock(block ContentBlock) ClassificationResult {
 }
 
 // classifyCommand matches a command string against command rules.
+// Until proper [cmd] section parsing is implemented, uses a deny-list
+// of dangerous commands as a fail-safe. Commands matching the deny-list
+// are escalated to TierLocalOnly; everything else defaults to Public.
 func (c *Classifier) classifyCommand(cmd string) (rules.Tier, string) {
-	// Check cmd rules in the rule set (stored as path rules with cmd prefix)
-	// For now, we check the rule set's path rules that look like command patterns
-	// TODO: implement proper [cmd] section parsing in rules package
+	cmd = strings.TrimSpace(cmd)
+	if cmd == "" {
+		return rules.TierPublic, "default"
+	}
+
+	// Fail-safe deny-list: commands that read sensitive system files.
+	// These should never be sent to the cloud unredacted.
+	dangerousCmds := []string{
+		"cat /etc/shadow", "cat /etc/passwd",
+		"cat ~/.ssh", "cat /root/.ssh",
+		"cat .env", "cat */.env",
+		"sudo cat", "sudo -A cat",
+	}
+	lowerCmd := strings.ToLower(cmd)
+	for _, dangerous := range dangerousCmds {
+		if strings.Contains(lowerCmd, strings.ToLower(dangerous)) {
+			return rules.TierLocalOnly, "cmd-denylist"
+		}
+	}
+
+	// Commands that read log files should be redacted
+	logCmds := []string{"journalctl", "dmesg", "cat /var/log", "tail /var/log", "less /var/log"}
+	for _, logCmd := range logCmds {
+		if strings.Contains(lowerCmd, logCmd) {
+			return rules.TierRedacted, "cmd-denylist"
+		}
+	}
+
 	return rules.TierPublic, "default"
 }
 

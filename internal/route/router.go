@@ -5,9 +5,6 @@ package route
 
 import (
 	"encoding/json"
-	"fmt"
-	"io"
-	"net/http"
 
 	"github.com/earl-sid/tidebreak/internal/audit"
 	"github.com/earl-sid/tidebreak/internal/classify"
@@ -248,20 +245,6 @@ func (r *Router) NewStreamRedactor(ctx *RequestContext) *redact.StreamRedactor {
 	return redact.NewStreamRedactor(tm)
 }
 
-// ProxyToUpstream forwards the (already redacted) request body to the
-// upstream cloud API and returns the response.
-func (r *Router) ProxyToUpstream(req *http.Request, upstreamURL string) (*http.Response, error) {
-	req.URL.Scheme = "https"
-	req.URL.Host = upstreamURL
-	req.RequestURI = ""
-
-	// Remove the X-Tidebreak-Agent header before forwarding
-	req.Header.Del("X-Tidebreak-Agent")
-
-	client := &http.Client{}
-	return client.Do(req)
-}
-
 // setMessageContent sets the content of a message in a JSON message object.
 func setMessageContent(m map[string]interface{}, content string) {
 	m["content"] = content
@@ -307,19 +290,4 @@ func restoreInPlace(v interface{}, tm *redact.TokenMatcher) {
 			}
 		}
 	}
-}
-
-// CopyRequestBody reads the request body safely.
-func CopyRequestBody(r *http.Request) ([]byte, error) {
-	if r.Body == nil {
-		return nil, nil
-	}
-	body, err := io.ReadAll(r.Body)
-	r.Body.Close()
-	return body, err
-}
-
-// fmtError wraps an error with context.
-func fmtError(ctx string, err error) error {
-	return fmt.Errorf("%s: %w", ctx, err)
 }

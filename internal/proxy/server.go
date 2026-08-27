@@ -13,6 +13,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/earl-sid/tidebreak/internal/audit"
 	"github.com/earl-sid/tidebreak/internal/route"
@@ -23,6 +24,25 @@ var UpstreamRoutes = map[string]string{
 	"/anthropic": "api.anthropic.com",
 	"/openai":    "api.openai.com",
 	"/xai":       "api.x.ai",
+}
+
+// hopByHopHeaders are per-connection headers that must not be forwarded
+// by a proxy, per RFC 7230 section 6.1.
+var hopByHopHeaders = []string{
+	"Connection",
+	"Keep-Alive",
+	"Proxy-Authenticate",
+	"Proxy-Authorization",
+	"TE",
+	"Trailer",
+	"Transfer-Encoding",
+	"Upgrade",
+}
+
+// upstreamClient is the shared HTTP client for upstream API calls.
+// Has a timeout to prevent indefinite hangs on slow/unresponsive upstreams.
+var upstreamClient = &http.Client{
+	Timeout: 120 * time.Second,
 }
 
 // Server is the Tidebreak proxy server.
@@ -44,14 +64,18 @@ func New(router *route.Router, auditLog *audit.Log, port int) *Server {
 // Start begins listening on localhost:port. Blocks until the server stops.
 func (s *Server) Start() error {
 	mux := http.NewServeMux()
+	mux.HandleFunc("/health", s.HealthCheck)
 	mux.HandleFunc("/", s.handleProxy)
 
 	addr := fmt.Sprintf("127.0.0.1:%d", s.Port)
 	log.Printf("Tidebreak proxy listening on %s", addr)
 
 	server := &http.Server{
-		Addr:    addr,
-		Handler: mux,
+		Addr:         addr,
+		Handler:      mux,
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 120 * time.Second,
+		IdleTimeout:  60 * time.Second,
 	}
 
 	return server.ListenAndServe()
@@ -94,24 +118,26 @@ func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
 		log.Printf("request from agent=%s had blocked content", agent)
 	}
 
-	// Forward to upstream
-	upstreamReq, err := http.NewRequest(r.Method, "https://"+upstreamHost+r.URL.Path, strings.NewReader(string(modifiedBody)))
+	// Forward to upstream — strip the Tidebreak path prefix
+	upstreamPath := strings.TrimPrefix(r.URL.Path, "/"+provider)
+	upstreamReq, err := http.NewRequest(r.Method, "https://"+upstreamHost+upstreamPath, strings.NewReader(string(modifiedBody)))
 	if err != nil {
 		http.Error(w, "creating upstream request", http.StatusInternalServerError)
 		return
 	}
 
-	// Copy headers (except Tidebreak-specific and hop-by-hop headers)
+	// Copy headers, filtering Tidebreak-specific, hop-by-hop, and
+	// per-connection headers per RFC 7230 section 6.1.
 	for k, v := range r.Header {
-		if k == "X-Tidebreak-Agent" || k == "Host" || k == "Content-Length" {
+		if isFilteredHeader(k) {
 			continue
 		}
 		upstreamReq.Header[k] = v
 	}
 	upstreamReq.Header.Set("Content-Length", fmt.Sprintf("%d", len(modifiedBody)))
 
-	// Send to upstream
-	resp, err := http.DefaultClient.Do(upstreamReq)
+	// Send to upstream with timeout
+	resp, err := upstreamClient.Do(upstreamReq)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("upstream error: %v", err), http.StatusBadGateway)
 		return
@@ -201,13 +227,36 @@ func (s *Server) handleStreamingResponse(w http.ResponseWriter, resp *http.Respo
 }
 
 // resolveUpstream determines the upstream API host from the request path.
+// Matches on path segments (not raw prefix) to prevent /anthropicevil
+// matching /anthropic.
 func (s *Server) resolveUpstream(path string) (host string, provider string) {
 	for prefix, host := range UpstreamRoutes {
-		if strings.HasPrefix(path, prefix) {
+		if path == prefix || strings.HasPrefix(path, prefix+"/") {
 			return host, strings.TrimPrefix(prefix, "/")
 		}
 	}
 	return "", ""
+}
+
+// isFilteredHeader returns true for headers that should not be forwarded
+// to the upstream API: Tidebreak-internal headers, hop-by-hop headers
+// (RFC 7230 section 6.1), and per-connection headers like Cookie and Host.
+func isFilteredHeader(headerName string) bool {
+	// Tidebreak-internal
+	if headerName == "X-Tidebreak-Agent" {
+		return true
+	}
+	// Per-connection / control headers
+	if headerName == "Host" || headerName == "Content-Length" || headerName == "Cookie" {
+		return true
+	}
+	// Hop-by-hop headers per RFC 7230
+	for _, h := range hopByHopHeaders {
+		if headerName == h {
+			return true
+		}
+	}
+	return false
 }
 
 // HealthCheck is a simple handler for liveness checks.

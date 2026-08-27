@@ -177,7 +177,14 @@ func expandPath(p string) string {
 // MergeConfig merges a child config into a parent. Child values override parent.
 // For path rules, child rules are appended (and take precedence during matching
 // since they're evaluated later). For patterns, child values override parent.
+// If parent is nil, it's treated as an empty config.
 func MergeConfig(parent, child *Config) *Config {
+	if parent == nil {
+		parent = &Config{
+			Patterns:   make(map[string]bool),
+			AgentRules: make(map[string]*Config),
+		}
+	}
 	merged := &Config{
 		Patterns:   make(map[string]bool),
 		AgentRules: make(map[string]*Config),

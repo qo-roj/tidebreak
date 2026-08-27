@@ -16,10 +16,10 @@ import (
 
 // Pattern defines a single redaction pattern.
 type Pattern struct {
-	Name        string
-	Regex       *regexp.Regexp
-	Replacement string // template, e.g. "[IP_REDACTED_%d]"
-	Enabled     bool
+	Name     string
+	Regex    *regexp.Regexp
+	Category string // token category, e.g. "IP", "EMAIL", "KEY"
+	Enabled  bool
 }
 
 // Redactor holds active patterns and the token mapping for the current request.
@@ -139,50 +139,15 @@ func (r *Redactor) allocateToken(p *Pattern, original string) string {
 		}
 	}
 
-	category := tokenCategory(p.Replacement)
+	category := p.Category
+	if category == "" {
+		category = "REDACTED"
+	}
 	n := r.counters[category] + 1
 	r.counters[category] = n
 	token := fmt.Sprintf("[TB:%s:%d]", category, n)
 	r.mapping[token] = original
 	return token
-}
-
-// tokenCategory extracts the category from a replacement template.
-// Old format: "[IP_REDACTED_%d]" → "IP"
-// New format: "[TB:IP:%d]" → "IP"
-// We use the pattern name's category prefix.
-func tokenCategory(template string) string {
-	// Extract category from the template: strip non-alpha chars from the prefix
-	// Templates like "[IP_REDACTED_%d]" → "IP"
-	// Or "[TB:IP:%d]" → "IP"
-	for i := 0; i < len(template); i++ {
-		c := template[i]
-		if c == ':' {
-			// New format [TB:CAT:N] — extract after TB:
-			if i+1 < len(template) {
-				rest := template[i+1:]
-				for j := 0; j < len(rest); j++ {
-					if rest[j] == ':' || rest[j] == '_' {
-						return strings.ToUpper(rest[:j])
-					}
-				}
-			}
-		}
-	}
-	// Old format: extract uppercase letters before first non-alpha
-	category := ""
-	for i := 0; i < len(template); i++ {
-		c := template[i]
-		if c >= 'A' && c <= 'Z' {
-			category += string(c)
-		} else if c == '_' {
-			break
-		}
-	}
-	if category == "" {
-		return "REDACTED"
-	}
-	return category
 }
 
 // Summary maps pattern name → count of redactions.
@@ -197,27 +162,7 @@ func (s Summary) Total() int {
 	return total
 }
 
-// replaceAll is a simple string replacer (avoiding regexp for literal strings).
+// replaceAll replaces all occurrences of old with new in s.
 func replaceAll(s, old, new string) string {
-	if old == "" {
-		return s
-	}
-	result := ""
-	for {
-		idx := indexOf(s, old)
-		if idx < 0 {
-			return result + s
-		}
-		result += s[:idx] + new
-		s = s[idx+len(old):]
-	}
-}
-
-func indexOf(s, substr string) int {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return i
-		}
-	}
-	return -1
+	return strings.ReplaceAll(s, old, new)
 }

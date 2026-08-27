@@ -7,6 +7,7 @@ package audit
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -177,7 +178,7 @@ func (l *Log) Query(agent string, since time.Time, limit int) ([]Entry, error) {
 	}
 
 	if len(where) > 0 {
-		q += " WHERE " + joinStrings(where, " AND ")
+		q += " WHERE " + strings.Join(where, " AND ")
 	}
 	q += " ORDER BY timestamp DESC LIMIT ?"
 	args = append(args, limit)
@@ -239,17 +240,4 @@ func (l *Log) GetSummary(since time.Time) (*Summary, error) {
 	}
 
 	return s, nil
-}
-
-// joinStrings joins strings with a separator (avoiding strings.Join import
-// to keep the file self-contained for the simple query path).
-func joinStrings(parts []string, sep string) string {
-	if len(parts) == 0 {
-		return ""
-	}
-	result := parts[0]
-	for _, p := range parts[1:] {
-		result += sep + p
-	}
-	return result
 }
