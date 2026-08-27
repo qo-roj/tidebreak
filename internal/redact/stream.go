@@ -19,9 +19,9 @@ type StreamRedactor struct {
 	maxBuffer int
 }
 
-// tokenBoundaryRegex matches a potential partial token at the end of a string.
-// A partial token starts with "[" but hasn't been closed with "]".
-var partialTokenStart = regexp.MustCompile(`\[[A-Za-z:_]*$`)
+// partialTokenStart matches a potential partial TB token at the end of a string.
+// Only matches [TB: prefixed partial tokens, not arbitrary opening brackets.
+var partialTokenStart = regexp.MustCompile(`\[TB:[A-Z]*:?[0-9]*$`)
 
 // tokenFullRegex matches complete [TB:CATEGORY:N] tokens anywhere in the string.
 var tokenFullRegex = regexp.MustCompile(`\[TB:[A-Z]+:\d+\]`)

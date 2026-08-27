@@ -10,6 +10,7 @@ package redact
 import (
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 )
@@ -28,6 +29,7 @@ type Pattern struct {
 type Redactor struct {
 	patterns    []*Pattern
 	mapping     map[string]string // token → original value
+	reverse     map[string]string // original value → token (for O(1) dedup)
 	mu          sync.Mutex
 	counters    map[string]int64 // per-category counter for unique tokens
 }
@@ -36,6 +38,7 @@ type Redactor struct {
 func New() *Redactor {
 	return &Redactor{
 		mapping:  make(map[string]string),
+		reverse:  make(map[string]string),
 		counters: make(map[string]int64),
 		patterns: DefaultPatterns(),
 	}
@@ -103,13 +106,25 @@ func (r *Redactor) Redact(content string) (string, Summary) {
 
 // Restore reverse-maps tokens in a response back to their original values.
 // This lets the agent work with real data in the cloud model's response.
+// Tokens are sorted by length (longest first) to prevent partial-match
+// issues where one token's original value contains another token's text.
 func (r *Redactor) Restore(content string) string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	// Build a sorted list of tokens (longest first) for deterministic
+	// replacement order that avoids partial-match collisions.
+	tokens := make([]string, 0, len(r.mapping))
+	for token := range r.mapping {
+		tokens = append(tokens, token)
+	}
+	sort.Slice(tokens, func(i, j int) bool {
+		return len(tokens[i]) > len(tokens[j])
+	})
+
 	result := content
-	for token, original := range r.mapping {
-		result = replaceAll(result, token, original)
+	for _, token := range tokens {
+		result = strings.ReplaceAll(result, token, r.mapping[token])
 	}
 	return result
 }
@@ -119,6 +134,7 @@ func (r *Redactor) Clear() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.mapping = make(map[string]string)
+	r.reverse = make(map[string]string)
 	r.counters = make(map[string]int64)
 }
 
@@ -131,12 +147,11 @@ func (r *Redactor) MappingCount() int {
 
 // allocateToken creates a unique token for a matched value and stores the mapping.
 // Token format: [TB:CATEGORY:N] — e.g. [TB:IP:1], [TB:EMAIL:2]
+// Uses a reverse map for O(1) dedup instead of O(n) linear scan.
 func (r *Redactor) allocateToken(p *Pattern, original string) string {
-	// Check if we already mapped this exact value
-	for token, val := range r.mapping {
-		if val == original {
-			return token
-		}
+	// O(1) dedup check via reverse map
+	if token, ok := r.reverse[original]; ok {
+		return token
 	}
 
 	category := p.Category
@@ -147,6 +162,7 @@ func (r *Redactor) allocateToken(p *Pattern, original string) string {
 	r.counters[category] = n
 	token := fmt.Sprintf("[TB:%s:%d]", category, n)
 	r.mapping[token] = original
+	r.reverse[original] = token
 	return token
 }
 
@@ -160,9 +176,4 @@ func (s Summary) Total() int {
 		total += count
 	}
 	return total
-}
-
-// replaceAll replaces all occurrences of old with new in s.
-func replaceAll(s, old, new string) string {
-	return strings.ReplaceAll(s, old, new)
 }

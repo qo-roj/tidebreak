@@ -10,6 +10,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/earl-sid/tidebreak/internal/redact"
@@ -41,12 +44,27 @@ type Client struct {
 }
 
 // New creates an Ollama client. url is typically http://localhost:11434.
+// If the URL is not localhost and uses plain HTTP, a warning is printed
+// since local-only content will be sent unencrypted over the network.
 func New(url, model string) *Client {
+	if !strings.HasPrefix(url, "https://") && !isLocalhost(url) {
+		fmt.Fprintf(os.Stderr, "WARNING: Ollama URL %s is not localhost and uses plain HTTP — local-only content will be sent unencrypted\n", url)
+	}
 	return &Client{
 		URL:   url,
 		Model: model,
 		HTTP:  &http.Client{Timeout: 60 * time.Second},
 	}
+}
+
+// isLocalhost checks if a URL points to localhost.
+func isLocalhost(rawURL string) bool {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	host := u.Hostname()
+	return host == "localhost" || host == "127.0.0.1" || host == "::1" || host == ""
 }
 
 // SummarizeRequest is the Ollama API request body.

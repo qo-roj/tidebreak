@@ -5,6 +5,7 @@ package route
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"github.com/earl-sid/tidebreak/internal/audit"
 	"github.com/earl-sid/tidebreak/internal/classify"
@@ -186,7 +187,8 @@ func (r *Router) ProcessRequest(body []byte, agent string, provider string) (ctx
 	// Serialize the modified request
 	modified, err := json.Marshal(request)
 	if err != nil {
-		return ctx, body, anyBlocked, nil
+		// Serialization failed — return error so the proxy can block
+		return ctx, nil, anyBlocked, fmt.Errorf("marshaling modified request: %w", err)
 	}
 
 	return ctx, modified, anyBlocked, nil

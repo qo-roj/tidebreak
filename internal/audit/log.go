@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -30,10 +31,11 @@ type Entry struct {
 
 // Log is the async audit log writer.
 type Log struct {
-	db   *sql.DB
-	queue chan Entry
-	done  chan struct{}
-	wg    sync.WaitGroup
+	db     *sql.DB
+	queue  chan Entry
+	done   chan struct{}
+	wg     sync.WaitGroup
+	dropped int64 // atomic counter for dropped entries
 }
 
 // New opens (or creates) the audit database at the given path and starts
@@ -91,15 +93,22 @@ func New(dbPath string) (*Log, error) {
 }
 
 // Record queues an entry for asynchronous writing. Non-blocking.
-// If the queue is full, the entry is dropped (the proxy must not block).
+// If the queue is full, the entry is dropped and the dropped counter is
+// incremented. Check DroppedCount() to monitor for dropped entries.
 func (l *Log) Record(entry Entry) {
 	entry.Timestamp = time.Now()
 	select {
 	case l.queue <- entry:
 	default:
-		// Queue full — drop to avoid blocking the proxy
-		// TODO: increment a dropped counter for monitoring
+		atomic.AddInt64(&l.dropped, 1)
 	}
+}
+
+// DroppedCount returns the number of audit entries that were dropped
+// because the queue was full. This should be monitored — if non-zero,
+// the queue buffer may need to be larger or the writer is too slow.
+func (l *Log) DroppedCount() int64 {
+	return atomic.LoadInt64(&l.dropped)
 }
 
 // writer is the background goroutine that flushes entries to SQLite.

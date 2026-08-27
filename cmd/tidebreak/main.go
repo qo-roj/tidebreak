@@ -129,8 +129,11 @@ func cmdAudit(args []string) {
 	limit := fs.Int("limit", 100, "Maximum entries to show")
 	fs.Parse(args)
 
-	_ = live // TODO: implement live mode
-	_ = since // TODO: parse duration
+	_ = since // parsed below via parseSince
+
+	if *live {
+		fmt.Fprintln(os.Stderr, "Warning: --live mode is not yet implemented; showing one-time query instead.")
+	}
 
 	home, _ := os.UserHomeDir()
 	dbPath := home + "/.local/share/tidebreak/audit.db"

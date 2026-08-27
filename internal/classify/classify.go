@@ -163,7 +163,11 @@ func extractPaths(content string) []string {
 		if len(word) < 2 {
 			continue
 		}
-		if strings.HasPrefix(word, "/") || strings.HasPrefix(word, "~/") || strings.HasPrefix(word, "~") {
+		// Absolute paths, ~/paths, and ~user/ paths
+		// Avoid matching bare ~ or ~~ (no slash after tilde)
+		if strings.HasPrefix(word, "/") ||
+			strings.HasPrefix(word, "~/") ||
+			(strings.HasPrefix(word, "~") && len(word) > 1 && word[1] != '~' && strings.Contains(word, "/")) {
 			if !seen[word] {
 				paths = append(paths, word)
 				seen[word] = true
