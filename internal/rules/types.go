@@ -48,18 +48,18 @@ type PathRule struct {
 
 // RuleSet holds all resolved rules and enabled redaction patterns.
 type RuleSet struct {
-	PathRules       []PathRule
-	RedactionFlags  map[string]bool // pattern name → enabled
+	PathRules      []PathRule
+	RedactionFlags map[string]bool // pattern name → enabled
 	Preset         string
-	AgentOverrides  map[string]*RuleSet // per-agent rule overrides (by agent name)
+	AgentOverrides map[string]*RuleSet // per-agent rule overrides (by agent name)
 }
 
 // Config represents a parsed configuration file (one layer of the stack).
 type Config struct {
-	Blocks      []string   // paths to block
-	LocalOnly   []string   // paths for local-only
-	Redact      []string   // paths to redact
-	Patterns    map[string]bool // redaction pattern toggles
-	AgentRules  map[string]*Config // per-agent sections
-	Preset      string
+	Blocks     []string           // paths to block
+	LocalOnly  []string           // paths for local-only
+	Redact     []string           // paths to redact
+	Patterns   map[string]bool    // redaction pattern toggles
+	AgentRules map[string]*Config // per-agent sections
+	Preset     string
 }

@@ -25,8 +25,8 @@ type RequestContext struct {
 // Router coordinates the classification, redaction, and routing of content.
 type Router struct {
 	Classifier *classify.Classifier
-	Ollama      *ollama.Client
-	AuditLog    *audit.Log
+	Ollama     *ollama.Client
+	AuditLog   *audit.Log
 }
 
 // New creates a Router with all dependencies wired.
@@ -162,7 +162,7 @@ func (r *Router) ProcessRequest(body []byte, agent string, provider string) (ctx
 				redactionsJSON, _ := json.Marshal(summary)
 				r.AuditLog.Record(audit.Entry{
 					Agent:      agent,
-					Provider:    provider,
+					Provider:   provider,
 					Action:     "read",
 					Target:     block.FilePath,
 					Tier:       "redacted",

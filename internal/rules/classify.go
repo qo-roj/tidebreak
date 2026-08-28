@@ -53,7 +53,7 @@ func BuildRuleSet(cfg *Config, source string) *RuleSet {
 	rs := &RuleSet{
 		RedactionFlags: make(map[string]bool),
 		AgentOverrides: make(map[string]*RuleSet),
-		Preset:        cfg.Preset,
+		Preset:         cfg.Preset,
 	}
 
 	// Add path rules in order: block, local-only, redact.

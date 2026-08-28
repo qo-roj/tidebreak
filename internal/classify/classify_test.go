@@ -49,9 +49,9 @@ func TestClassifyBlockRedactedByPath(t *testing.T) {
 	c := New(makeRuleSet())
 
 	block := ContentBlock{
-		Content: "server is starting up...",
+		Content:  "server is starting up...",
 		FilePath: "/var/log/syslog",
-		Role:    "user",
+		Role:     "user",
 	}
 
 	result := c.ClassifyBlock(block)

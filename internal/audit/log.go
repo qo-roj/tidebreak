@@ -31,10 +31,10 @@ type Entry struct {
 
 // Log is the async audit log writer.
 type Log struct {
-	db     *sql.DB
-	queue  chan Entry
-	done   chan struct{}
-	wg     sync.WaitGroup
+	db      *sql.DB
+	queue   chan Entry
+	done    chan struct{}
+	wg      sync.WaitGroup
 	dropped int64 // atomic counter for dropped entries
 }
 

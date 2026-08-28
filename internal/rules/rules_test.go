@@ -137,14 +137,14 @@ func TestPathExpansion(t *testing.T) {
 
 func TestMergeConfig(t *testing.T) {
 	parent := &Config{
-		Blocks:    []string{"~/.ssh/id_*"},
-		Redact:    []string{"~/.zsh_history"},
-		Patterns:  map[string]bool{"ipv4": true, "email": true},
+		Blocks:   []string{"~/.ssh/id_*"},
+		Redact:   []string{"~/.zsh_history"},
+		Patterns: map[string]bool{"ipv4": true, "email": true},
 	}
 
 	child := &Config{
-		Blocks:    []string{"/etc/shadow"},
-		Patterns:  map[string]bool{"email": false},
+		Blocks:   []string{"/etc/shadow"},
+		Patterns: map[string]bool{"email": false},
 	}
 
 	merged := MergeConfig(parent, child)
@@ -193,7 +193,7 @@ func TestClassifyPathLastMatchWins(t *testing.T) {
 	// When two rules match, the later (more specific) one wins
 	cfg := &Config{
 		Blocks: []string{
-			"~/.ssh/**",     // block everything in .ssh
+			"~/.ssh/**", // block everything in .ssh
 		},
 		Redact: []string{
 			"~/.ssh/config", // but redact (allow) the config file
@@ -246,9 +246,9 @@ func TestClassifyPathForAgent(t *testing.T) {
 func TestIsRedactionEnabled(t *testing.T) {
 	cfg := &Config{
 		Patterns: map[string]bool{
-			"ipv4":   true,
-			"email":  false,
-			"jwt":    true,
+			"ipv4":  true,
+			"email": false,
+			"jwt":   true,
 		},
 	}
 	rs := BuildRuleSet(cfg, "test")

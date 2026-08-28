@@ -31,10 +31,10 @@ func TestTokenMatcherFuzzyMatch(t *testing.T) {
 	tm := NewTokenMatcher(r)
 
 	tests := []string{
-		`"TB:IP:1"`,   // quotes
-		"`TB:IP:1`",   // backticks
-		`TB:IP:1`,     // no brackets
-		`TB_IP_1`,      // underscores
+		`"TB:IP:1"`, // quotes
+		"`TB:IP:1`", // backticks
+		`TB:IP:1`,   // no brackets
+		`TB_IP_1`,   // underscores
 	}
 
 	for _, fuzzy := range tests {

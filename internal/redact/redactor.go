@@ -27,11 +27,11 @@ type Pattern struct {
 // The mapping is never persisted, never logged, and is cleared after each
 // request completes.
 type Redactor struct {
-	patterns    []*Pattern
-	mapping     map[string]string // token → original value
-	reverse     map[string]string // original value → token (for O(1) dedup)
-	mu          sync.Mutex
-	counters    map[string]int64 // per-category counter for unique tokens
+	patterns []*Pattern
+	mapping  map[string]string // token → original value
+	reverse  map[string]string // original value → token (for O(1) dedup)
+	mu       sync.Mutex
+	counters map[string]int64 // per-category counter for unique tokens
 }
 
 // New creates a Redactor with default patterns. Use WithPatterns to customize.

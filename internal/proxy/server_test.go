@@ -78,12 +78,12 @@ func (m *mockTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 // mockUpstream records received requests and returns configurable responses.
 type mockUpstream struct {
-	server       *httptest.Server
-	receivedBody []byte
-	receivedPath  string
+	server          *httptest.Server
+	receivedBody    []byte
+	receivedPath    string
 	receivedHeaders http.Header
-	responseBody  string
-	statusCode    int
+	responseBody    string
+	statusCode      int
 }
 
 func (m *mockUpstream) handle(w http.ResponseWriter, r *http.Request) {

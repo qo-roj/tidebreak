@@ -17,7 +17,7 @@ import (
 // ContentBlock represents a unit of content within an LLM API request.
 // Blocks are extracted from messages, tool results, and file references.
 type ContentBlock struct {
-	Content      string // the text content
+	Content       string // the text content
 	FilePath      string // if this block is from a file read, the path
 	Command       string // if this block is from a command execution, the command
 	IsToolResult  bool   // true if this block is a tool-use result
@@ -27,10 +27,10 @@ type ContentBlock struct {
 
 // ClassificationResult holds the tier and reasoning for a single block.
 type ClassificationResult struct {
-	Tier    rules.Tier
-	Source  string // which rule matched
-	Block   ContentBlock
-	Reason  string
+	Tier   rules.Tier
+	Source string // which rule matched
+	Block  ContentBlock
+	Reason string
 }
 
 // Classifier classifies content blocks using path rules, command rules,
@@ -205,8 +205,8 @@ func ParseRequest(body []byte) []ContentBlock {
 		content := extractContent(m)
 
 		block := ContentBlock{
-			Content:      content,
-			Role:         role,
+			Content:       content,
+			Role:          role,
 			IsSystemBlock: role == "system",
 		}
 
