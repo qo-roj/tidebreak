@@ -6,9 +6,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/earl-sid/tidebreak/internal/ollama"
-	"github.com/earl-sid/tidebreak/internal/redact"
-	"github.com/earl-sid/tidebreak/internal/rules"
+	"github.com/qo-roj/tidebreak/internal/ollama"
+	"github.com/qo-roj/tidebreak/internal/redact"
+	"github.com/qo-roj/tidebreak/internal/rules"
 )
 
 func makeTestRouter(t *testing.T, ollamaClient *ollama.Client) *Router {

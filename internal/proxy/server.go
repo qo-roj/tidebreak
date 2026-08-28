@@ -15,8 +15,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/earl-sid/tidebreak/internal/audit"
-	"github.com/earl-sid/tidebreak/internal/route"
+	"github.com/qo-roj/tidebreak/internal/audit"
+	"github.com/qo-roj/tidebreak/internal/route"
 )
 
 // UpstreamRoutes maps path prefixes to upstream API hosts.

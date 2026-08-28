@@ -9,12 +9,12 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/earl-sid/tidebreak/internal/audit"
-	"github.com/earl-sid/tidebreak/internal/config"
-	"github.com/earl-sid/tidebreak/internal/ollama"
-	"github.com/earl-sid/tidebreak/internal/proxy"
-	"github.com/earl-sid/tidebreak/internal/route"
-	"github.com/earl-sid/tidebreak/internal/rules"
+	"github.com/qo-roj/tidebreak/internal/audit"
+	"github.com/qo-roj/tidebreak/internal/config"
+	"github.com/qo-roj/tidebreak/internal/ollama"
+	"github.com/qo-roj/tidebreak/internal/proxy"
+	"github.com/qo-roj/tidebreak/internal/route"
+	"github.com/qo-roj/tidebreak/internal/rules"
 )
 
 // Version is set at build time via -ldflags.

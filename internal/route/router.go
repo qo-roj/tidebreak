@@ -7,11 +7,11 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/earl-sid/tidebreak/internal/audit"
-	"github.com/earl-sid/tidebreak/internal/classify"
-	"github.com/earl-sid/tidebreak/internal/ollama"
-	"github.com/earl-sid/tidebreak/internal/redact"
-	"github.com/earl-sid/tidebreak/internal/rules"
+	"github.com/qo-roj/tidebreak/internal/audit"
+	"github.com/qo-roj/tidebreak/internal/classify"
+	"github.com/qo-roj/tidebreak/internal/ollama"
+	"github.com/qo-roj/tidebreak/internal/redact"
+	"github.com/qo-roj/tidebreak/internal/rules"
 )
 
 // RequestContext holds per-request state (primarily the redactor mapping)

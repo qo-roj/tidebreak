@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/earl-sid/tidebreak/internal/rules"
+	"github.com/qo-roj/tidebreak/internal/rules"
 )
 
 //go:embed rules/defaults.conf
@@ -174,7 +174,7 @@ func fileExists(path string) bool {
 // SaveDefaultConfig writes a default config file to the given path.
 func SaveDefaultConfig(path string) error {
 	content := `# Tidebreak Configuration
-# Docs: https://github.com/earl-sid/tidebreak/blob/main/docs/rules-guide.md
+# Docs: https://github.com/qo-roj/tidebreak/blob/main/docs/rules-guide.md
 
 [gateway]
 port = 8842

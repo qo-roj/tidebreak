@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/earl-sid/tidebreak/internal/audit"
-	"github.com/earl-sid/tidebreak/internal/route"
-	"github.com/earl-sid/tidebreak/internal/rules"
+	"github.com/qo-roj/tidebreak/internal/audit"
+	"github.com/qo-roj/tidebreak/internal/route"
+	"github.com/qo-roj/tidebreak/internal/rules"
 )
 
 // makeTestServer creates a proxy Server with a test router.

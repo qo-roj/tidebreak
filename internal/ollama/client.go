@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/earl-sid/tidebreak/internal/redact"
+	"github.com/qo-roj/tidebreak/internal/redact"
 )
 
 // DefaultSummarizationPrompt is the prompt used for local-only content.

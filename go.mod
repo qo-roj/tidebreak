@@ -1,4 +1,4 @@
-module github.com/earl-sid/tidebreak
+module github.com/qo-roj/tidebreak
 
 go 1.25.0
 
