@@ -6,7 +6,9 @@ package audit
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -249,4 +251,43 @@ func (l *Log) GetSummary(since time.Time) (*Summary, error) {
 	}
 
 	return s, nil
+}
+
+// Export writes all entries (optionally since a given time) to a JSON file.
+// Returns the number of entries exported.
+func (l *Log) Export(path string, since time.Time) (int, error) {
+	entries, err := l.Query("", since, 100000)
+	if err != nil {
+		return 0, fmt.Errorf("querying for export: %w", err)
+	}
+
+	f, err := os.Create(path)
+	if err != nil {
+		return 0, fmt.Errorf("creating export file: %w", err)
+	}
+	defer f.Close()
+
+	encoder := json.NewEncoder(f)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(entries); err != nil {
+		return 0, fmt.Errorf("encoding export: %w", err)
+	}
+
+	return len(entries), nil
+}
+
+// Rotate exports all entries to the given path, then deletes them from the
+// database. Returns the number of entries rotated out.
+func (l *Log) Rotate(exportPath string, since time.Time) (int, error) {
+	count, err := l.Export(exportPath, since)
+	if err != nil {
+		return 0, err
+	}
+
+	// Delete rotated entries
+	if _, err := l.db.Exec("DELETE FROM audit_entries WHERE timestamp <= ?", time.Now()); err != nil {
+		return count, fmt.Errorf("deleting rotated entries: %w", err)
+	}
+
+	return count, nil
 }

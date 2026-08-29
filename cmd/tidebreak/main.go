@@ -123,17 +123,15 @@ func cmdStart(args []string) {
 
 func cmdAudit(args []string) {
 	fs := flag.NewFlagSet("audit", flag.ExitOnError)
-	agent := fs.String("agent", "", "Filter by agent name")
-	live := fs.Bool("live", false, "Tail -f style live mode")
+	live := fs.Bool("live", false, "Tail -f style live mode (alias for --tail)")
+	tail := fs.Bool("tail", false, "Tail mode: show recent entries and poll for new ones")
+	watch := fs.Bool("watch", false, "Watch mode: same as --tail but with more detail")
 	since := fs.String("since", "24h", "Time range (e.g. 2h, 24h, 7d)")
 	limit := fs.Int("limit", 100, "Maximum entries to show")
+	export := fs.String("export", "", "Export audit log to JSON file")
+	rotate := fs.String("rotate", "", "Export to JSON file and delete old entries from DB")
+	agentFilter := fs.String("agent", "", "Filter by agent name")
 	fs.Parse(args)
-
-	_ = since // parsed below via parseSince
-
-	if *live {
-		fmt.Fprintln(os.Stderr, "Warning: --live mode is not yet implemented; showing one-time query instead.")
-	}
 
 	home, _ := os.UserHomeDir()
 	dbPath := home + "/.local/share/tidebreak/audit.db"
@@ -145,7 +143,36 @@ func cmdAudit(args []string) {
 	}
 	defer log.Close()
 
-	entries, err := log.Query(*agent, parseSince(*since), *limit)
+	// Export mode
+	if *export != "" {
+		count, err := log.Export(*export, parseSince(*since))
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error exporting: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("Exported %d entries to %s\n", count, *export)
+		return
+	}
+
+	// Rotate mode
+	if *rotate != "" {
+		count, err := log.Rotate(*rotate, parseSince(*since))
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error rotating: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("Rotated %d entries to %s (deleted from DB)\n", count, *rotate)
+		return
+	}
+
+	// Live/tail/watch mode — poll for new entries
+	if *tail || *watch || *live {
+		auditLive(log, *agentFilter, *watch)
+		return
+	}
+
+	// Standard query mode
+	entries, err := log.Query(*agentFilter, parseSince(*since), *limit)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error querying audit log: %v\n", err)
 		os.Exit(1)
@@ -157,14 +184,63 @@ func cmdAudit(args []string) {
 	}
 
 	for _, e := range entries {
-		approved := "✗"
-		if e.Approved {
-			approved = "✓"
+		printAuditEntry(e, false)
+	}
+}
+
+// auditLive polls the audit log for new entries and prints them as they arrive.
+func auditLive(log *audit.Log, agentFilter string, detailed bool) {
+	// Start from now
+	lastSeen := time.Now()
+
+	// Show recent history first (last 10 entries)
+	recent, _ := log.Query(agentFilter, time.Now().Add(-5*time.Minute), 10)
+	for i := len(recent) - 1; i >= 0; i-- {
+		printAuditEntry(recent[i], detailed)
+	}
+	if len(recent) > 0 {
+		lastSeen = recent[0].Timestamp
+	}
+
+	fmt.Fprintln(os.Stderr, "\n── watching for new entries (Ctrl+C to stop) ──")
+
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		entries, err := log.Query(agentFilter, lastSeen, 1000)
+		if err != nil {
+			continue
 		}
+		for _, e := range entries {
+			printAuditEntry(e, detailed)
+			if e.Timestamp.After(lastSeen) {
+				lastSeen = e.Timestamp
+			}
+		}
+	}
+}
+
+// printAuditEntry prints a single audit entry.
+func printAuditEntry(e audit.Entry, detailed bool) {
+	approved := "✗"
+	if e.Approved {
+		approved = "✓"
+	}
+	if detailed {
 		fmt.Printf("%s  %s  %s  %s  %s  tier=%s  %s\n",
 			e.Timestamp.Format("2006-01-02 15:04:05"),
-			e.Agent, e.Provider, e.Action, e.Target, e.Tier, approved,
-		)
+			e.Agent, e.Provider, e.Action, e.Target, e.Tier, approved)
+		if e.Redactions != "" && e.Redactions != "null" {
+			fmt.Printf("  redactions: %s\n", e.Redactions)
+		}
+		if e.Notes != "" {
+			fmt.Printf("  notes: %s\n", e.Notes)
+		}
+	} else {
+		fmt.Printf("%s  %s  %s  %s  %s  tier=%s  %s\n",
+			e.Timestamp.Format("2006-01-02 15:04:05"),
+			e.Agent, e.Provider, e.Action, e.Target, e.Tier, approved)
 	}
 }
 
@@ -266,9 +342,10 @@ func cmdSetupOllama() {
 
 func cmdPresets() {
 	fmt.Println("Available presets:")
-	fmt.Println("  desktop    — Omarchy / personal workstation (default)")
-	fmt.Println("  server     — Production server with user data")
-	fmt.Println("  paranoid   — Maximum redaction, minimal cloud exposure")
+	fmt.Println("  desktop         — Omarchy / personal workstation (default)")
+	fmt.Println("  server          — Production server with user data")
+	fmt.Println("  paranoid        — Maximum redaction, minimal cloud exposure")
+	fmt.Println("  training-data   — Redact all PII for safe fine-tuning datasets")
 }
 
 func parseSince(s string) time.Time {

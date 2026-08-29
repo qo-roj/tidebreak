@@ -40,6 +40,14 @@ tidebreak start
 tidebreak install --all
 ```
 
+### Option C — Docker
+
+```bash
+docker compose up -d        # starts Tidebreak + Ollama
+```
+
+See `docker-compose.yml` and `config/tidebreak.conf.example`.
+
 ## How It Works
 
 ```
@@ -55,13 +63,16 @@ Agent ──▶ Tidebreak (localhost:8842) ──▶ ┌── Cloud API (scrubb
 
 ## Features
 
-- **Pattern redaction** — IPv4/IPv6, emails, phone numbers, API keys (GitHub, OpenAI, AWS, Anthropic, Google, Stripe), JWTs, private keys, MAC addresses, credit cards
+- **Pattern redaction** — IPv4/IPv6, emails, phone numbers, API keys (GitHub, OpenAI, AWS, Anthropic, Google, Stripe, Slack, GitLab), JWTs, private keys, MAC addresses, credit cards, SSNs, database connection strings
+- **Agent auto-detection** — identifies agents by `X-Tidebreak-Agent` header or `User-Agent` string (Claude Code, Codex, OpenCode, Hermes, Cursor, Aider, Cline, GitHub Copilot, Grok CLI)
 - **Path-based rules** — block / local-only / redact entire directories
 - **Two-model routing** — cloud for reasoning on scrubbed data, Ollama for sensitive data
-- **Audit log** — full transparency, see exactly what left your machine
-- **Presets** — desktop, server, paranoid configurations out of the box
+- **Audit log** — SQLite-backed, full transparency, real-time monitoring (`--tail`, `--watch`), export and rotation
+- **Presets** — desktop, server, paranoid, training-data (PII-safe fine-tuning) configurations out of the box
 - **Per-project rules** — `.tidebreak.conf` in any project root
 - **Per-agent rules** — different agents get different access levels
+- **Docker support** — official `docker compose` setup with Ollama sidecar
+- **CI/CD** — GitHub Actions with automated testing and cross-platform release binaries
 - **Single binary** — Go, no runtime dependencies, cross-platform
 
 ## Documentation

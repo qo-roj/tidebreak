@@ -26,6 +26,9 @@ var serverConf embed.FS
 //go:embed rules/presets/paranoid.conf
 var paranoidConf embed.FS
 
+//go:embed rules/presets/training-data.conf
+var trainingDataConf embed.FS
+
 // Gateway holds the runtime configuration for the Tidebreak gateway.
 type Gateway struct {
 	Port     int
@@ -160,6 +163,8 @@ func loadPreset(name string) ([]byte, error) {
 		return serverConf.ReadFile("rules/presets/server.conf")
 	case "paranoid":
 		return paranoidConf.ReadFile("rules/presets/paranoid.conf")
+	case "training-data":
+		return trainingDataConf.ReadFile("rules/presets/training-data.conf")
 	default:
 		return nil, fmt.Errorf("unknown preset: %s", name)
 	}

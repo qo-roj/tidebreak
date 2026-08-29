@@ -146,10 +146,11 @@ ollama_model = llama3:8b
 # See rules/defaults.conf for the full list
 
 [preset]
-# Choose: desktop, server, or paranoid
-# desktop   — Omarchy / personal workstation (default)
-# server    — Production server with user data
-# paranoid  — Maximum redaction
+# Choose: desktop, server, paranoid, or training-data
+# desktop         — Omarchy / personal workstation (default)
+# server          — Production server with user data
+# paranoid        — Maximum redaction
+# training-data   — Redact all PII for fine-tuning datasets
 desktop
 CONF
     echo "✓ Default config created at ${CONFIG_DIR}/tidebreak.conf"

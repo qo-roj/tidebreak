@@ -84,10 +84,11 @@ func (s *Server) Start() error {
 
 // handleProxy is the main request handler.
 func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
-	// Identify the agent from the custom header
+	// Identify the agent — check custom header first, then fall back to
+	// User-Agent-based auto-detection for agents that don't set X-Tidebreak-Agent.
 	agent := r.Header.Get("X-Tidebreak-Agent")
 	if agent == "" {
-		agent = "unknown"
+		agent = detectAgent(r)
 	}
 
 	// Determine the upstream provider from the path prefix
@@ -274,4 +275,49 @@ func (s *Server) HealthCheck(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(status)
+}
+
+// agentSignatures maps User-Agent substrings to agent names.
+// This enables auto-detection for agents that don't set X-Tidebreak-Agent.
+var agentSignatures = []struct {
+	substring string
+	name      string
+}{
+	{"claude-code", "claude-code"},
+	{"ClaudeCode", "claude-code"},
+	{"anthropic-cli", "claude-code"},
+	{"codex", "codex"},
+	{"openai-codex", "codex"},
+	{"opencode", "opencode"},
+	{"hermes", "hermes"},
+	{"Hermes", "hermes"},
+	{"cursor", "cursor"},
+	{"aider", "aider"},
+	{"cline", "cline"},
+	{"continue-dev", "continue"},
+	{"gh copilot", "github-copilot"},
+	{"github-copilot", "github-copilot"},
+	{"grok-cli", "grok-cli"},
+	{"xai-cli", "grok-cli"},
+}
+
+// detectAgent identifies the calling agent from the User-Agent header.
+// Returns "unknown" if no known agent signature is found.
+func detectAgent(r *http.Request) string {
+	ua := r.Header.Get("User-Agent")
+	if ua == "" {
+		return "unknown"
+	}
+	uaLower := strings.ToLower(ua)
+	for _, sig := range agentSignatures {
+		if strings.Contains(uaLower, sig.substring) {
+			return sig.name
+		}
+	}
+	// If we can't identify a specific agent but there's a User-Agent,
+	// use a truncated version so it's distinguishable from headerless requests.
+	if len(ua) > 40 {
+		ua = ua[:40]
+	}
+	return "ua:" + ua
 }

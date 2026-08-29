@@ -1,0 +1,18 @@
+# Tidebreak — Example Docker Config
+# Copy to config/tidebreak.conf and edit as needed.
+
+[gateway]
+port = 8842
+log_level = info
+
+[cloud]
+# Keys are read from environment variables:
+# ANTHROPIC_API_KEY, OPENAI_API_KEY, XAI_API_KEY
+
+[local]
+# Ollama running in the compose network
+ollama_url = http://ollama:11434
+ollama_model = llama3:8b
+
+[preset]
+server

@@ -253,3 +253,72 @@ func TestSchemaCreated(t *testing.T) {
 		t.Error("expected to find entry by agent")
 	}
 }
+
+func TestExport(t *testing.T) {
+	log := newTestLog(t)
+
+	entries := []Entry{
+		{Agent: "claude", Provider: "anthropic", Action: "read", Target: "/a", Tier: "redacted"},
+		{Agent: "codex", Provider: "openai", Action: "read", Target: "/b", Tier: "public"},
+	}
+	for _, e := range entries {
+		log.Record(e)
+	}
+	time.Sleep(200 * time.Millisecond)
+
+	exportPath := filepath.Join(t.TempDir(), "export.json")
+	count, err := log.Export(exportPath, time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 2 {
+		t.Errorf("expected 2 exported, got %d", count)
+	}
+
+	// Verify file exists and is valid JSON
+	data, err := os.ReadFile(exportPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(data) == 0 {
+		t.Error("export file is empty")
+	}
+}
+
+func TestRotate(t *testing.T) {
+	log := newTestLog(t)
+
+	for i := 0; i < 5; i++ {
+		log.Record(Entry{Agent: "test", Provider: "test", Action: "read", Target: "/file", Tier: "public"})
+	}
+	time.Sleep(200 * time.Millisecond)
+
+	// Verify entries exist
+	results, err := log.Query("", time.Time{}, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 5 {
+		t.Fatalf("expected 5 entries before rotate, got %d", len(results))
+	}
+
+	// Rotate
+	exportPath := filepath.Join(t.TempDir(), "rotate.json")
+	count, err := log.Rotate(exportPath, time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 5 {
+		t.Errorf("expected 5 rotated, got %d", count)
+	}
+
+	// Verify DB is empty
+	time.Sleep(200 * time.Millisecond)
+	results, err = log.Query("", time.Time{}, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 0 {
+		t.Errorf("expected 0 entries after rotate, got %d", len(results))
+	}
+}
