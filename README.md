@@ -19,11 +19,25 @@ machine.
 
 ## Quick Start
 
+### Option A — Install script (downloads release binary)
+
 ```bash
-curl -fsSL https://tidebreak.dev/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/qo-roj/tidebreak/main/scripts/install.sh | bash
 tidebreak setup-ollama     # configure local model
 tidebreak start             # start gateway
 tidebreak install --all     # configure your agents
+```
+
+### Option B — Build from source (requires Go 1.25+)
+
+```bash
+git clone https://github.com/qo-roj/tidebreak.git
+cd tidebreak
+make build
+make install                # installs to ~/.local/bin/tidebreak
+tidebreak setup-ollama
+tidebreak start
+tidebreak install --all
 ```
 
 ## How It Works

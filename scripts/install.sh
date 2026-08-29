@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Tidebreak — Installer
 # Usage:
-#   curl -fsSL https://tidebreak.dev/install.sh | bash          # GitHub release (when available)
+#   curl -fsSL https://raw.githubusercontent.com/qo-roj/tidebreak/main/scripts/install.sh | bash
 #   TIDEBREAK_MIRROR=https://mirror.local bash install.sh       # Fleet mirror
 #   bash install.sh --local /path/to/tidebreak-binary          # Local binary (dev)
 #   bash install.sh --build                                     # Build from source (needs Go)
@@ -26,7 +26,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Mirror URL (can be overridden for fleet/private hosting)
-DOWNLOAD_BASE="${TIDEBREAK_MIRROR:-https://github.com/earl-sid/tidebreak/releases}"
+DOWNLOAD_BASE="${TIDEBREAK_MIRROR:-https://github.com/qo-roj/tidebreak/releases}"
 
 echo "🦞 Tidebreak — Redaction Gateway for AI Agents"
 echo ""
@@ -68,7 +68,7 @@ elif [[ "$DO_BUILD" == true ]]; then
     fi
     echo "Building from source..."
     TMP_SRC="$(mktemp -d)"
-    git clone https://github.com/earl-sid/tidebreak "$TMP_SRC" 2>/dev/null || {
+    git clone https://github.com/qo-roj/tidebreak "$TMP_SRC" 2>/dev/null || {
         echo "✗ Could not clone repo. If the GitHub repo doesn't exist yet,"
         echo "  use --local /path/to/binary or build manually."
         exit 1
@@ -122,7 +122,7 @@ fi
 if [[ ! -f "${CONFIG_DIR}/tidebreak.conf" ]]; then
     cat > "${CONFIG_DIR}/tidebreak.conf" << 'CONF'
 # Tidebreak Configuration
-# Docs: https://github.com/earl-sid/tidebreak/blob/main/docs/rules-guide.md
+# Docs: https://github.com/qo-roj/tidebreak/blob/main/docs/rules-guide.md
 
 [gateway]
 port = 8842
@@ -187,4 +187,4 @@ echo ""
 echo "  4. Review your rules:"
 echo "     tidebreak config edit"
 echo ""
-echo "Docs: https://github.com/earl-sid/tidebreak"
+echo "Docs: https://github.com/qo-roj/tidebreak"

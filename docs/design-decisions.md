@@ -638,8 +638,8 @@ which is fragile and platform-specific.
 
 ### Problem
 
-The install script references `https://github.com/earl-sid/tidebreak/releases/...`
-which doesn't exist yet.
+The install script references `https://github.com/qo-roj/tidebreak/releases/...`
+which didn't exist initially.
 
 ### Decision: Two-Phase Release Strategy
 
@@ -655,14 +655,14 @@ fleet-hosted mirror:
 # Install from fleet mirror (private)
 curl -fsSL https://git.zitronenkuchen.tail5156c1.ts.net/tidebreak/install.sh | bash
 
-# Install from GitHub (public, once repo is created)
-curl -fsSL https://tidebreak.dev/install.sh | bash
+# Install from GitHub (public)
+curl -fsSL https://raw.githubusercontent.com/qo-roj/tidebreak/main/scripts/install.sh | bash
 ```
 
 ### Phase 2: GitHub Release (When Ready)
 
 Once the Go code is written and the repo is public:
-1. Create `github.com/earl-sid/tidebreak` (or whatever org/account)
+1. Create `github.com/qo-roj/tidebreak` (done)
 2. Set up GitHub Actions for cross-compilation (linux/amd64, linux/arm64, darwin/amd64, darwin/arm64)
 3. Tag releases, upload binaries as release assets
 4. Point install.sh at GitHub releases
@@ -677,7 +677,7 @@ The install script now:
 
 ```bash
 # In install.sh
-DOWNLOAD_BASE="${TIDEBREAK_MIRROR:-https://github.com/earl-sid/tidebreak/releases}"
+DOWNLOAD_BASE="${TIDEBREAK_MIRROR:-https://github.com/qo-roj/tidebreak/releases}"
 
 if [[ -n "${TIDEBREAK_BINARY:-}" ]]; then
     # Local binary
@@ -687,7 +687,7 @@ elif curl -fsSL "${DOWNLOAD_BASE}/download/${VERSION}/tidebreak-${PLATFORM}-${AR
     :
 elif command -v go &>/dev/null; then
     # Build from source
-    git clone https://github.com/earl-sid/tidebreak /tmp/tidebreak-src
+    git clone https://github.com/qo-roj/tidebreak /tmp/tidebreak-src
     cd /tmp/tidebreak-src && go build -o "${INSTALL_DIR}/tidebreak" ./cmd/tidebreak
 else
     echo "No binary available and Go not installed. Install Go or download manually."
@@ -697,8 +697,7 @@ fi
 
 ### GitHub Repo Name
 
-The repo will be at `github.com/earl-sid/tidebreak` (placeholder — final name
-decided when the repo is created). The install script uses an env var so the
+The repo is at `github.com/qo-roj/tidebreak`. The install script uses an env var so the
 URL can be changed without code changes:
 
 ```bash
