@@ -106,27 +106,56 @@ func (r *Redactor) Redact(content string) (string, Summary) {
 
 // Restore reverse-maps tokens in a response back to their original values.
 // This lets the agent work with real data in the cloud model's response.
-// Tokens are sorted by length (longest first) to prevent partial-match
-// issues where one token's original value contains another token's text.
+//
+// Mapping values may themselves contain tokens (e.g. a database_connection
+// match whose original embeds an EMAIL token redacted by an earlier
+// pattern). Values are expanded transitively before replacement so nested
+// tokens never strand, and tokens are sorted longest-first with a
+// deterministic alphabetical tiebreak.
 func (r *Redactor) Restore(content string) string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	// Build a sorted list of tokens (longest first) for deterministic
-	// replacement order that avoids partial-match collisions.
-	tokens := make([]string, 0, len(r.mapping))
-	for token := range r.mapping {
+	if len(r.mapping) == 0 {
+		return content
+	}
+
+	// Expand nested tokens inside mapping values (bounded depth guards
+	// against accidental cycles).
+	expanded := make(map[string]string, len(r.mapping))
+	for token, original := range r.mapping {
+		expanded[token] = r.expandValue(original, 0)
+	}
+
+	tokens := make([]string, 0, len(expanded))
+	for token := range expanded {
 		tokens = append(tokens, token)
 	}
 	sort.Slice(tokens, func(i, j int) bool {
-		return len(tokens[i]) > len(tokens[j])
+		if len(tokens[i]) != len(tokens[j]) {
+			return len(tokens[i]) > len(tokens[j])
+		}
+		return tokens[i] < tokens[j] // deterministic order for equal lengths
 	})
 
 	result := content
 	for _, token := range tokens {
-		result = strings.ReplaceAll(result, token, r.mapping[token])
+		result = strings.ReplaceAll(result, token, expanded[token])
 	}
 	return result
+}
+
+// expandValue resolves redaction tokens embedded in a mapping value.
+func (r *Redactor) expandValue(value string, depth int) string {
+	if depth > 10 {
+		return value
+	}
+	for token, original := range r.mapping {
+		if strings.Contains(value, token) {
+			value = strings.ReplaceAll(value, token, r.expandValue(original, depth+1))
+		}
+	}
+	return value
 }
 
 // Clear wipes the mapping table. Call after a request completes.

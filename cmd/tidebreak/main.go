@@ -4,9 +4,12 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/qo-roj/tidebreak/internal/audit"
@@ -35,6 +38,8 @@ func main() {
 		cmdAudit(os.Args[2:])
 	case "classify":
 		cmdClassify(os.Args[2:])
+	case "dry-run":
+		cmdDryRun(os.Args[2:])
 	case "config":
 		cmdConfig(os.Args[2:])
 	case "install":
@@ -306,6 +311,114 @@ func cmdConfig(args []string) {
 		fmt.Printf("Setting %s = %s (not yet implemented)\n", args[1], args[2])
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown config command: %s\n", args[0])
+	}
+}
+
+// cmdDryRun shows what the redactor would do to a file (or stdin) without
+// sending anything anywhere. Prints before/after and the token mapping.
+func cmdDryRun(args []string) {
+	fs := flag.NewFlagSet("dry-run", flag.ExitOnError)
+	file := fs.String("file", "", "File to redact (default: read stdin)")
+	unified := fs.Bool("unified", false, "Unified diff instead of side-by-side listing")
+	restore := fs.Bool("restore", false, "Also show the restored output (tokens mapped back)")
+	fs.Parse(args)
+
+	var data []byte
+	var err error
+	if *file != "" {
+		data, err = os.ReadFile(*file)
+	} else {
+		data, err = io.ReadAll(os.Stdin)
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error reading input: %v\n", err)
+		os.Exit(1)
+	}
+
+	cfg, err := config.Load(0, "")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
+		os.Exit(1)
+	}
+
+	router := route.New(cfg.RuleSet, nil, nil)
+	redactor := router.NewRedactor()
+	defer redactor.Clear()
+
+	content := string(data)
+	after, summary := redactor.Redact(content)
+
+	fmt.Printf("Input: %d bytes, %d lines\n\n", len(data), strings.Count(content, "\n")+1)
+
+	if *unified {
+		fmt.Println("── UNIFIED DIFF (before → after) ──")
+		beforeLines := strings.Split(content, "\n")
+		afterLines := strings.Split(after, "\n")
+		n := len(beforeLines)
+		if len(afterLines) > n {
+			n = len(afterLines)
+		}
+		for i := 0; i < n; i++ {
+			b, a := "", ""
+			if i < len(beforeLines) {
+				b = beforeLines[i]
+			}
+			if i < len(afterLines) {
+				a = afterLines[i]
+			}
+			if b == a {
+				continue
+			}
+			fmt.Printf("- %s\n+ %s\n", b, a)
+		}
+	} else {
+		fmt.Println("── BEFORE / AFTER ──")
+		beforeLines := strings.Split(content, "\n")
+		afterLines := strings.Split(after, "\n")
+		n := len(beforeLines)
+		if len(afterLines) > n {
+			n = len(afterLines)
+		}
+		for i := 0; i < n; i++ {
+			b, a := "", ""
+			if i < len(beforeLines) {
+				b = beforeLines[i]
+			}
+			if i < len(afterLines) {
+				a = afterLines[i]
+			}
+			if b == a {
+				fmt.Printf("  %s\n", b)
+			} else {
+				fmt.Printf("- %s\n+ %s\n", b, a)
+			}
+		}
+	}
+
+	fmt.Println("\n── REDACTION SUMMARY ──")
+	if summary.Total() == 0 {
+		fmt.Println("nothing redacted")
+	} else {
+		// Deterministic order for readable output
+		names := make([]string, 0, len(summary))
+		for name := range summary {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			fmt.Printf("  %-20s %d\n", name, summary[name])
+		}
+		fmt.Printf("  %-20s %d\n", "TOTAL", summary.Total())
+	}
+
+	if *restore {
+		restored := redactor.Restore(after)
+		if restored == content {
+			fmt.Println("\n── RESTORE CHECK ──\nround-trip identical to input")
+		} else {
+			fmt.Println("\n── RESTORE CHECK ──")
+			fmt.Println(restored)
+		}
 	}
 }
 

@@ -68,6 +68,12 @@ func (r *Router) newRedactor() *redact.Redactor {
 	return redact.NewWithNames(r.enabledPatterns)
 }
 
+// NewRedactor returns a fresh Redactor honoring the configured pattern
+// toggles. Exposed for the dry-run CLI command and tests.
+func (r *Router) NewRedactor() *redact.Redactor {
+	return r.newRedactor()
+}
+
 // ProcessRequest takes an incoming LLM API request body, classifies each
 // content block, and returns the modified request body ready to forward
 // to the cloud API. For local-only blocks, the content is sent to Ollama
