@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -41,9 +42,23 @@ var hopByHopHeaders = []string{
 }
 
 // upstreamClient is the shared HTTP client for upstream API calls.
-// Has a timeout to prevent indefinite hangs on slow/unresponsive upstreams.
+// No overall client timeout: streaming responses (SSE) can legitimately run
+// for longer than any fixed deadline. Liveness is enforced at the transport
+// layer instead — dial/TLS/response-header timeouts plus idle-connection
+// reaping — so a dead upstream is detected quickly while live streams run
+// as long as they need to.
 var upstreamClient = &http.Client{
-	Timeout: 120 * time.Second,
+	Transport: &http.Transport{
+		DialContext: (&net.Dialer{
+			Timeout:   10 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ResponseHeaderTimeout: 60 * time.Second,
+		IdleConnTimeout:       90 * time.Second,
+		MaxIdleConns:          10,
+		MaxIdleConnsPerHost:   4,
+	},
 }
 
 // Server is the Tidebreak proxy server.
@@ -99,12 +114,12 @@ func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Read the request body
+	defer r.Body.Close()
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "reading request body", http.StatusBadRequest)
 		return
 	}
-	r.Body.Close()
 
 	// Guard against nil router (fail-closed)
 	if s.Router == nil {
@@ -126,8 +141,12 @@ func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
 		log.Printf("request from agent=%s had blocked content", agent)
 	}
 
-	// Forward to upstream — strip the Tidebreak path prefix
+	// Forward to upstream — strip the Tidebreak path prefix, keep the query
+	// string (beta features, API versions are passed there)
 	upstreamPath := strings.TrimPrefix(r.URL.Path, "/"+provider)
+	if r.URL.RawQuery != "" {
+		upstreamPath += "?" + r.URL.RawQuery
+	}
 	upstreamReq, err := http.NewRequest(r.Method, "https://"+upstreamHost+upstreamPath, strings.NewReader(string(modifiedBody)))
 	if err != nil {
 		http.Error(w, "creating upstream request", http.StatusInternalServerError)
@@ -163,6 +182,29 @@ func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// copyResponseHeaders copies upstream response headers to the client,
+// stripping hop-by-hop headers (RFC 7230 §6.1) and the upstream
+// Content-Length (the proxy may change body length during token restore,
+// so the framework's own framing must be trusted instead).
+func copyResponseHeaders(w http.ResponseWriter, resp *http.Response) {
+	for k, v := range resp.Header {
+		if isHopByHop(k) || k == "Content-Length" {
+			continue
+		}
+		w.Header()[k] = v
+	}
+}
+
+// isHopByHop reports whether a header is hop-by-hop per RFC 7230 §6.1.
+func isHopByHop(headerName string) bool {
+	for _, h := range hopByHopHeaders {
+		if headerName == h {
+			return true
+		}
+	}
+	return false
+}
+
 // handleBatchResponse handles non-streaming responses.
 func (s *Server) handleBatchResponse(w http.ResponseWriter, resp *http.Response, ctx *route.RequestContext) {
 	respBody, err := io.ReadAll(resp.Body)
@@ -174,10 +216,7 @@ func (s *Server) handleBatchResponse(w http.ResponseWriter, resp *http.Response,
 	// Reverse-map tokens in the response using the per-request context
 	processed := s.Router.ProcessResponse(ctx, respBody)
 
-	// Copy response headers
-	for k, v := range resp.Header {
-		w.Header()[k] = v
-	}
+	copyResponseHeaders(w, resp)
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(processed)))
 	w.WriteHeader(resp.StatusCode)
 	w.Write(processed)
@@ -195,10 +234,10 @@ func (s *Server) handleStreamingResponse(w http.ResponseWriter, resp *http.Respo
 		return
 	}
 
-	// Copy response headers
-	for k, v := range resp.Header {
-		w.Header()[k] = v
-	}
+	// Copy response headers — hop-by-hop and Content-Length stripped
+	// (body length changes during token restore; the HTTP framework
+	// handles framing/chunking itself).
+	copyResponseHeaders(w, resp)
 	w.WriteHeader(resp.StatusCode)
 
 	// Create one StreamRedactor per response — the boundary buffer
@@ -277,20 +316,19 @@ func (s *Server) HealthCheck(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(status)
 }
 
-// agentSignatures maps User-Agent substrings to agent names.
-// This enables auto-detection for agents that don't set X-Tidebreak-Agent.
+// agentSignatures maps User-Agent substrings to agent names. Signatures
+// must be lowercase — detection compares against the lowercased User-Agent.
 var agentSignatures = []struct {
 	substring string
 	name      string
 }{
 	{"claude-code", "claude-code"},
-	{"ClaudeCode", "claude-code"},
+	{"claudecode", "claude-code"},
 	{"anthropic-cli", "claude-code"},
 	{"codex", "codex"},
 	{"openai-codex", "codex"},
 	{"opencode", "opencode"},
 	{"hermes", "hermes"},
-	{"Hermes", "hermes"},
 	{"cursor", "cursor"},
 	{"aider", "aider"},
 	{"cline", "cline"},

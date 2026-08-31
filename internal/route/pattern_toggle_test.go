@@ -1,0 +1,80 @@
+package route
+
+import (
+	"testing"
+
+	"github.com/qo-roj/tidebreak/internal/rules"
+)
+
+// Pattern toggles from [redaction.patterns] must reach the per-request
+// Redactor. Regression test for the pre-fix behavior: RedactionFlags were
+// parsed but never consulted — NewWithNames had no caller.
+func TestPatternTogglesReachRedactor(t *testing.T) {
+	cfg, err := rules.ParseConfigBytes([]byte(`
+[redaction.patterns]
+ipv4 = false
+email = false
+ssn_us = true
+`), "user")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rs := rules.BuildRuleSet(cfg, "user")
+	r := New(rs, nil, nil)
+
+	red := r.newRedactor()
+	if red == nil {
+		t.Fatal("newRedactor returned nil")
+	}
+
+	// IPv4 and email disabled by config: content must pass through.
+	out, _ := red.Redact("server is 192.168.1.10 and mail goes to bob@example.com")
+	if out != "server is 192.168.1.10 and mail goes to bob@example.com" {
+		t.Errorf("disabled patterns still redacted: %q", out)
+	}
+
+	// SSN enabled by config: must still redact.
+	out, _ = red.Redact("ssn 123-45-6789 here")
+	if out == "ssn 123-45-6789 here" {
+		t.Error("enabled pattern (ssn_us) did not redact")
+	}
+}
+
+// A rule set with no toggle entries at all must behave like the old
+// defaults (all default patterns on).
+func TestNoTogglesDefaultBehavior(t *testing.T) {
+	cfg, err := rules.ParseConfigBytes([]byte(`
+[redact]
+~/projects/**
+`), "user")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rs := rules.BuildRuleSet(cfg, "user")
+	r := New(rs, nil, nil)
+
+	red := r.newRedactor()
+	out, _ := red.Redact("connect to 10.0.0.5 as bob@example.com")
+	if out == "connect to 10.0.0.5 as bob@example.com" {
+		t.Error("default patterns were not applied when no toggles configured")
+	}
+}
+
+// Extended patterns (private IPs) must activate when a config enables them.
+func TestExtendedPatternActivation(t *testing.T) {
+	cfg, err := rules.ParseConfigBytes([]byte(`
+[redaction.patterns]
+ipv4_private = true
+`), "user")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rs := rules.BuildRuleSet(cfg, "user")
+	r := New(rs, nil, nil)
+
+	red := r.newRedactor()
+	out, _ := red.Redact("proxy_pass http://10.0.0.5:8080")
+	if out == "proxy_pass http://10.0.0.5:8080" {
+		t.Error("ipv4_private toggle did not activate the extended pattern")
+	}
+}

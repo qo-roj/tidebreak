@@ -174,7 +174,18 @@ func (l *Log) Query(agent string, since time.Time, limit int) ([]Entry, error) {
 	if limit <= 0 || limit > 10000 {
 		limit = 100
 	}
+	return l.query(agent, since, limit)
+}
 
+// queryAll is Query without the display limit cap — used by Export and
+// Rotate, which must see every matching row.
+func (l *Log) queryAll(agent string, since time.Time) ([]Entry, error) {
+	return l.query(agent, since, -1) // -1 = uncapped
+}
+
+// query is the shared implementation. limit <= 0 (or -1) means no LIMIT
+// clause at all.
+func (l *Log) query(agent string, since time.Time, limit int) ([]Entry, error) {
 	q := "SELECT id, timestamp, agent, provider, action, target, tier, redactions, approved, notes FROM audit_entries"
 	args := []interface{}{}
 	where := []string{}
@@ -191,8 +202,11 @@ func (l *Log) Query(agent string, since time.Time, limit int) ([]Entry, error) {
 	if len(where) > 0 {
 		q += " WHERE " + strings.Join(where, " AND ")
 	}
-	q += " ORDER BY timestamp DESC LIMIT ?"
-	args = append(args, limit)
+	q += " ORDER BY timestamp DESC"
+	if limit > 0 {
+		q += " LIMIT ?"
+		args = append(args, limit)
+	}
 
 	rows, err := l.db.Query(q, args...)
 	if err != nil {
@@ -253,10 +267,11 @@ func (l *Log) GetSummary(since time.Time) (*Summary, error) {
 	return s, nil
 }
 
-// Export writes all entries (optionally since a given time) to a JSON file.
+// Export writes all matching entries (optionally since a given time) to a
+// JSON file. No row cap — exports every entry that matches the filter.
 // Returns the number of entries exported.
 func (l *Log) Export(path string, since time.Time) (int, error) {
-	entries, err := l.Query("", since, 100000)
+	entries, err := l.queryAll("", since)
 	if err != nil {
 		return 0, fmt.Errorf("querying for export: %w", err)
 	}
@@ -276,16 +291,18 @@ func (l *Log) Export(path string, since time.Time) (int, error) {
 	return len(entries), nil
 }
 
-// Rotate exports all entries to the given path, then deletes them from the
-// database. Returns the number of entries rotated out.
+// Rotate exports matching entries to the given path, then deletes exactly
+// those entries from the database. Entries outside the since filter are
+// retained. Returns the number of entries rotated out.
 func (l *Log) Rotate(exportPath string, since time.Time) (int, error) {
 	count, err := l.Export(exportPath, since)
 	if err != nil {
 		return 0, err
 	}
 
-	// Delete rotated entries
-	if _, err := l.db.Exec("DELETE FROM audit_entries WHERE timestamp <= ?", time.Now()); err != nil {
+	// Delete exactly what was exported: same filter, bounded by now so
+	// entries written between the export query and this DELETE survive.
+	if _, err := l.db.Exec("DELETE FROM audit_entries WHERE timestamp >= ? AND timestamp <= ?", since, time.Now()); err != nil {
 		return count, fmt.Errorf("deleting rotated entries: %w", err)
 	}
 

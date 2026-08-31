@@ -44,11 +44,35 @@ type PathRule struct {
 	Pattern string // glob pattern (doublestar-compatible)
 	Tier    Tier
 	Source  string // which config layer defined this rule (for debugging)
+	Layer   int    // config layer that defined this rule (LayerDefaults..LayerProject)
+}
+
+// CmdRuleSpec is a parsed [cmd] rule before tier resolution.
+type CmdRuleSpec struct {
+	Pattern string // command glob (doublestar-compatible)
+	Tier    string // "block", "local-only", "redact", or "public"
+}
+
+// Config layer ordering. Higher layers override lower ones; only
+// human-authored layers (user, project) may downgrade a blocked tier.
+const (
+	LayerDefaults = 1 // embedded defaults.conf
+	LayerPreset   = 2 // preset selected at load time
+	LayerUser     = 3 // ~/.config/tidebreak/tidebreak.conf
+	LayerProject  = 4 // ./.tidebreak.conf
+)
+
+// LayeredConfig is one config layer fed into BuildRuleSetLayered.
+type LayeredConfig struct {
+	Cfg    *Config
+	Layer  int
+	Source string
 }
 
 // RuleSet holds all resolved rules and enabled redaction patterns.
 type RuleSet struct {
 	PathRules      []PathRule
+	CmdRules       []PathRule      // command-string rules from [cmd] sections
 	RedactionFlags map[string]bool // pattern name → enabled
 	Preset         string
 	AgentOverrides map[string]*RuleSet // per-agent rule overrides (by agent name)
@@ -59,6 +83,7 @@ type Config struct {
 	Blocks     []string           // paths to block
 	LocalOnly  []string           // paths for local-only
 	Redact     []string           // paths to redact
+	Cmds       []CmdRuleSpec      // command rules from [cmd] sections
 	Patterns   map[string]bool    // redaction pattern toggles
 	AgentRules map[string]*Config // per-agent sections
 	Preset     string

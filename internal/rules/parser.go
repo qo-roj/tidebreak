@@ -44,17 +44,26 @@ func ParseConfigBytes(data []byte, path string) (*Config, error) {
 		// Section header
 		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
 			section := strings.TrimSpace(line[1 : len(line)-1])
+			section = stripInlineComment(section)
 
 			switch {
 			case section == "block":
 				currentSection = "block"
-				// Don't reset currentAgent if we're inside an agent block
+				// Agent scope is sticky across tier sections (documented in
+				// rules-guide.md): after [agent:x], [block]/[local-only]/
+				// [redact]/[cmd] sections still apply to that agent. Use
+				// [global] to return to global scope.
 			case section == "local-only":
 				currentSection = "local-only"
 			case section == "redact":
 				currentSection = "redact"
+			case section == "cmd":
+				currentSection = "cmd"
 			case section == "redaction.patterns":
 				currentSection = "patterns"
+			case section == "global":
+				// Explicit return to global scope without changing the section
+				currentAgent = ""
 			case strings.HasPrefix(section, "agent:"):
 				currentAgent = strings.TrimSpace(section[len("agent:"):])
 				currentSection = "block" // default section for agent rules
@@ -83,7 +92,10 @@ func ParseConfigBytes(data []byte, path string) (*Config, error) {
 		// Preset value line (bare word under [preset])
 		if currentSection == "preset" {
 			val := strings.TrimSpace(line)
-			if val == "desktop" || val == "server" || val == "paranoid" || strings.Contains(val, ",") {
+			// Accept any plausible preset name; validity is checked by the
+			// config loader (loadPreset). The old whitelist missed
+			// "training-data" and any future preset.
+			if val != "" {
 				cfg.Preset = val
 			}
 			continue
@@ -93,14 +105,30 @@ func ParseConfigBytes(data []byte, path string) (*Config, error) {
 		if currentSection == "patterns" {
 			if parts := strings.SplitN(line, "=", 2); len(parts) == 2 {
 				name := strings.TrimSpace(parts[0])
-				val := strings.TrimSpace(parts[1])
+				val := strings.TrimSpace(stripInlineComment(parts[1]))
 				cfg.Patterns[name] = val == "true" || val == "1" || val == "yes"
+			}
+			continue
+		}
+
+		// Command rules: "pattern = tier" under [cmd]
+		if currentSection == "cmd" {
+			if spec, ok := parseCmdRule(line); ok {
+				if currentAgent != "" {
+					cfg.AgentRules[currentAgent].Cmds = append(cfg.AgentRules[currentAgent].Cmds, spec)
+				} else {
+					cfg.Cmds = append(cfg.Cmds, spec)
+				}
 			}
 			continue
 		}
 
 		// Path rules
 		if currentSection == "block" || currentSection == "local-only" || currentSection == "redact" {
+			line = stripInlineComment(line)
+			if line == "" {
+				continue
+			}
 			// Skip key=value lines that aren't paths
 			if strings.Contains(line, "=") && !looksLikePath(line) {
 				continue
@@ -146,6 +174,40 @@ func looksLikePath(s string) bool {
 		strings.HasPrefix(s, "**") ||
 		strings.HasPrefix(s, "./") ||
 		strings.Contains(s, "/") && !strings.Contains(s, "=")
+}
+
+// stripInlineComment removes a trailing "  # comment" from a config line.
+// Only a # preceded by whitespace (or at line start) is treated as a comment
+// so that hashes inside values (e.g. glob patterns) are preserved.
+func stripInlineComment(s string) string {
+	for i := 0; i < len(s); i++ {
+		if s[i] != '#' {
+			continue
+		}
+		if i == 0 || s[i-1] == ' ' || s[i-1] == '	' {
+			return strings.TrimSpace(s[:i])
+		}
+	}
+	return s
+}
+
+// parseCmdRule parses a [cmd] line: "glob = tier". The pattern may be quoted.
+func parseCmdRule(line string) (CmdRuleSpec, bool) {
+	line = strings.TrimSpace(stripInlineComment(line))
+	if line == "" {
+		return CmdRuleSpec{}, false
+	}
+	parts := strings.SplitN(line, "=", 2)
+	if len(parts) != 2 {
+		return CmdRuleSpec{}, false
+	}
+	pattern := strings.TrimSpace(parts[0])
+	tier := strings.TrimSpace(parts[1])
+	if pattern == "" || tier == "" {
+		return CmdRuleSpec{}, false
+	}
+	pattern = strings.Trim(pattern, `"'`)
+	return CmdRuleSpec{Pattern: pattern, Tier: tier}, true
 }
 
 // expandPath expands ~ and ~USER prefixes to absolute paths.

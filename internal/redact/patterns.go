@@ -192,3 +192,77 @@ func ExtendedPatterns() []*Pattern {
 	}
 	return append(DefaultPatterns(), extra...)
 }
+
+// patternNames is the registry of every known pattern, in evaluation order.
+// AllPatterns and PatternNames are the single source of truth for what a
+// [redaction.patterns] toggle can reference.
+var patternNames = []string{
+	"private_key", "jwt", "api_key_github", "api_key_openai", "api_key_anthropic",
+	"api_key_aws", "api_key_aws_secret", "api_key_google", "api_key_stripe",
+	"api_key_slack", "api_key_gitlab", "bearer_token", "email", "ipv4", "ipv6",
+	"mac_address", "database_connection", "credit_card", "ssn_us", "phone",
+	"ipv4_private", "hostname_internal", "iban", "passport", "high_entropy_secret",
+}
+
+// AllPatterns returns every known pattern (defaults plus extended). Extended
+// patterns are disabled by default; enable them via [redaction.patterns].
+func AllPatterns() []*Pattern {
+	byName := make(map[string]*Pattern)
+	for _, p := range ExtendedPatterns() {
+		byName[p.Name] = p
+	}
+	ordered := make([]*Pattern, 0, len(patternNames))
+	for _, name := range patternNames {
+		if p, ok := byName[name]; ok {
+			ordered = append(ordered, p)
+		}
+	}
+	return ordered
+}
+
+// PatternNames returns the names of every known pattern, in evaluation order.
+func PatternNames() []string {
+	out := make([]string, len(patternNames))
+	copy(out, patternNames)
+	return out
+}
+
+// defaultPatternSet is the set of patterns enabled out of the box. Extended
+// patterns (private IPs, internal hostnames, IBAN, passports, high-entropy
+// secrets) are opt-in only — they must be explicitly enabled via
+// [redaction.patterns] before they redact anything.
+var defaultPatternSet = func() map[string]bool {
+	m := make(map[string]bool)
+	for _, p := range DefaultPatterns() {
+		m[p.Name] = true
+	}
+	return m
+}()
+
+// IsDefaultPattern reports whether a pattern is part of the default set
+// (enabled out of the box).
+func IsDefaultPattern(name string) bool {
+	return defaultPatternSet[name]
+}
+
+// NewWithNames creates a Redactor with the named patterns enabled (plus the
+// defaults for any name not recognized). Unknown names are ignored so that
+// configs referencing future/renamed patterns don't crash the gateway.
+func NewWithNames(enabled []string) *Redactor {
+	enabledSet := make(map[string]bool, len(enabled))
+	for _, n := range enabled {
+		enabledSet[n] = true
+	}
+	patterns := make([]*Pattern, 0)
+	for _, p := range AllPatterns() {
+		p2 := *p
+		p2.Enabled = enabledSet[p.Name] // absent name → disabled
+		patterns = append(patterns, &p2)
+	}
+	return &Redactor{
+		mapping:  make(map[string]string),
+		reverse:  make(map[string]string),
+		counters: make(map[string]int64),
+		patterns: patterns,
+	}
+}

@@ -31,7 +31,7 @@ func TestSummarizeTwoStageRedaction(t *testing.T) {
 	client := New(server.URL, "llama3:8b")
 	defer client.Close()
 
-	result, err := client.Summarize("raw content with secrets")
+	result, err := client.Summarize("raw content with secrets", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +59,7 @@ func TestSummarizeOllamaError(t *testing.T) {
 	client := New(server.URL, "llama3:8b")
 	defer client.Close()
 
-	_, err := client.Summarize("content")
+	_, err := client.Summarize("content", nil)
 	if err == nil {
 		t.Fatal("expected error for 500 response")
 	}
@@ -69,7 +69,7 @@ func TestSummarizeOllamaConnectionRefused(t *testing.T) {
 	client := New("http://localhost:99999", "llama3:8b")
 	defer client.Close()
 
-	_, err := client.Summarize("content")
+	_, err := client.Summarize("content", nil)
 	if err == nil {
 		t.Fatal("expected error for connection refused")
 	}
@@ -111,7 +111,7 @@ func TestSummarizePromptContainsContent(t *testing.T) {
 	client := New(server.URL, "llama3:8b")
 	defer client.Close()
 
-	client.Summarize("my secret content here")
+	client.Summarize("my secret content here", nil)
 	if capturedPrompt == "" {
 		t.Error("expected non-empty prompt")
 	}

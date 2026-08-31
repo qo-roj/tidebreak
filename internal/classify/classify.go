@@ -52,8 +52,22 @@ func New(rs *rules.RuleSet) *Classifier {
 //  2. Path rules (if block contains a file path) — with agent overrides
 //  3. Pattern-based classification (scan content for sensitive patterns)
 func (c *Classifier) ClassifyBlock(block ContentBlock, agent string) ClassificationResult {
-	// 1. Command rules — if this is a tool result with a command
+	// 1. Command rules — if this is a tool result with a command.
+	// Configured [cmd] rules take precedence; the built-in deny-list runs
+	// as a fail-safe floor when no configured rule matches (or when command
+	// rules were never configured at all).
 	if block.IsToolResult && block.Command != "" {
+		if c.ruleSet != nil {
+			tier, source := c.ruleSet.ClassifyCommand(block.Command)
+			if tier != rules.TierPublic || source != "default" {
+				return ClassificationResult{
+					Tier:   tier,
+					Source: source,
+					Block:  block,
+					Reason: "matched command rule: " + block.Command,
+				}
+			}
+		}
 		tier, source := c.classifyCommand(block.Command)
 		if tier != rules.TierPublic || source != "default" {
 			return ClassificationResult{
@@ -113,14 +127,19 @@ func (c *Classifier) classifyCommand(cmd string) (rules.Tier, string) {
 	dangerousCmds := []string{
 		"cat /etc/shadow", "cat /etc/passwd",
 		"cat ~/.ssh", "cat /root/.ssh",
-		"cat .env", "cat */.env",
-		"sudo cat", "sudo -A cat",
+		"cat .env",
+		"sudo cat", "sudo -a cat",
 	}
 	lowerCmd := strings.ToLower(cmd)
 	for _, dangerous := range dangerousCmds {
 		if strings.Contains(lowerCmd, strings.ToLower(dangerous)) {
 			return rules.TierLocalOnly, "cmd-denylist"
 		}
+	}
+	// Any .env read anywhere (covers subdirectories — the old literal
+	// "cat */.env" entry never matched anything).
+	if strings.Contains(lowerCmd, ".env") {
+		return rules.TierLocalOnly, "cmd-denylist"
 	}
 
 	// Commands that read log files should be redacted

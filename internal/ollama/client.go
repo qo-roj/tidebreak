@@ -85,7 +85,7 @@ type SummarizeResponse struct {
 //
 // If Ollama is unavailable, returns an error. The caller should
 // block local-only content in this case (never send it to cloud).
-func (c *Client) Summarize(content string) (string, error) {
+func (c *Client) Summarize(content string, enabledPatterns []string) (string, error) {
 	// Stage 1: Ollama summarization
 	summary, err := c.callOllama(content)
 	if err != nil {
@@ -93,8 +93,15 @@ func (c *Client) Summarize(content string) (string, error) {
 	}
 
 	// Stage 2: Pattern redaction on the summary
-	// Per-call Redactor prevents concurrent cross-contamination
-	redactor := redact.New()
+	// Per-call Redactor prevents concurrent cross-contamination.
+	// Honors [redaction.patterns] toggles when a pattern set is provided
+	// (nil → default patterns).
+	var redactor *redact.Redactor
+	if enabledPatterns == nil {
+		redactor = redact.New()
+	} else {
+		redactor = redact.NewWithNames(enabledPatterns)
+	}
 	defer redactor.Clear()
 	scrubbed, _ := redactor.Redact(summary)
 

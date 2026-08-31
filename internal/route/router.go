@@ -27,15 +27,45 @@ type Router struct {
 	Classifier *classify.Classifier
 	Ollama     *ollama.Client
 	AuditLog   *audit.Log
+	RuleSet    *rules.RuleSet // kept for pattern-toggle consultation
+
+	// enabledPatterns is the resolved [redaction.patterns] set (nil → all
+	// default patterns, matching pre-toggle behavior).
+	enabledPatterns []string
 }
 
 // New creates a Router with all dependencies wired.
 func New(rs *rules.RuleSet, ollamaClient *ollama.Client, auditLog *audit.Log) *Router {
-	return &Router{
+	r := &Router{
 		Classifier: classify.New(rs),
 		Ollama:     ollamaClient,
 		AuditLog:   auditLog,
+		RuleSet:    rs,
 	}
+	// Resolve pattern toggles once at startup. A pattern redacts when:
+	//   - it is a default pattern and not explicitly disabled, or
+	//   - it is an extended pattern explicitly enabled by any layer.
+	// Extended patterns stay opt-in — an unmentioned toggle must not turn
+	// on aggressive patterns (e.g. high_entropy_secret) by accident.
+	if rs != nil {
+		for _, name := range redact.PatternNames() {
+			if !rs.IsRedactionEnabled(name) {
+				continue // explicitly disabled in the highest layer
+			}
+			if _, explicit := rs.RedactionFlags[name]; explicit || redact.IsDefaultPattern(name) {
+				r.enabledPatterns = append(r.enabledPatterns, name)
+			}
+		}
+	}
+	return r
+}
+
+// newRedactor builds the per-request Redactor honoring pattern toggles.
+func (r *Router) newRedactor() *redact.Redactor {
+	if r.enabledPatterns == nil {
+		return redact.New()
+	}
+	return redact.NewWithNames(r.enabledPatterns)
 }
 
 // ProcessRequest takes an incoming LLM API request body, classifies each
@@ -67,8 +97,10 @@ func (r *Router) ProcessRequest(body []byte, agent string, provider string) (ctx
 		return &RequestContext{Redactor: redact.New()}, body, false, nil
 	}
 
-	// Per-request Redactor — prevents concurrent cross-contamination
-	reqRedactor := redact.New()
+	// Per-request Redactor — prevents concurrent cross-contamination.
+	// Built with the router's pattern-toggle set so [redaction.patterns]
+	// in any config layer actually takes effect.
+	reqRedactor := r.newRedactor()
 	ctx = &RequestContext{Redactor: reqRedactor}
 
 	var redactionSummary redact.Summary = make(redact.Summary)
@@ -108,7 +140,7 @@ func (r *Router) ProcessRequest(body []byte, agent string, provider string) (ctx
 		case rules.TierLocalOnly:
 			// Send to Ollama for summarization
 			if r.Ollama != nil && r.Ollama.Available() {
-				summary, err := r.Ollama.Summarize(block.Content)
+				summary, err := r.Ollama.Summarize(block.Content, r.enabledPatterns)
 				if err != nil {
 					// Ollama failed — block the content
 					setMessageContent(m, "[Tidebreak: local-only content could not be processed]")

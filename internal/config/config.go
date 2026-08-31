@@ -58,11 +58,12 @@ type AppConfig struct {
 }
 
 // Load resolves configuration from all sources in order:
-// 1. Built-in defaults (embedded in binary)
-// 2. Preset (embedded in binary)
-// 3. User config (~/.config/tidebreak/tidebreak.conf)
-// 4. Project-local config (./.tidebreak.conf)
-// 5. CLI flags (passed as params)
+//  1. Built-in defaults (embedded in binary)
+//  2. Preset (embedded in binary) — the preset indicated by user/project
+//     config takes priority over the default desktop preset
+//  3. User config (~/.config/tidebreak/tidebreak.conf)
+//  4. Project-local config (./.tidebreak.conf)
+//  5. CLI flags (passed as params)
 func Load(cliPort int, cliPreset string) (*AppConfig, error) {
 	cfg := &AppConfig{
 		Gateway: Gateway{
@@ -85,48 +86,62 @@ func Load(cliPort int, cliPreset string) (*AppConfig, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parsing defaults: %w", err)
 	}
-	mergedRules := defaultsCfg
 
-	// 2. Preset (embedded)
+	// Pass 1: read the preset selection from CLI, user config, and project
+	// config (highest priority first). The preset choice determines which
+	// preset layer is merged, so it must be known before any preset is loaded.
+	presetChoice := ""
 	if cliPreset != "" {
-		cfg.Gateway.Preset = cliPreset
+		presetChoice = cliPreset
 	}
+	home, _ := os.UserHomeDir()
+	userConfigPath := filepath.Join(home, ".config", "tidebreak", "tidebreak.conf")
+	var userCfg, projCfg *rules.Config
+	if fileExists(userConfigPath) {
+		userCfg, err = rules.ParseConfig(userConfigPath)
+		if err != nil {
+			return nil, fmt.Errorf("user config: %w", err)
+		}
+		if userCfg.Preset != "" && presetChoice == "" {
+			presetChoice = userCfg.Preset
+		}
+	}
+	if fileExists(".tidebreak.conf") {
+		projCfg, err = rules.ParseConfig(".tidebreak.conf")
+		if err != nil {
+			return nil, fmt.Errorf("project config: %w", err)
+		}
+		if projCfg.Preset != "" && presetChoice == "" {
+			presetChoice = projCfg.Preset
+		}
+	}
+	if presetChoice != "" {
+		cfg.Gateway.Preset = presetChoice
+	}
+
+	// 2. Preset (embedded) — resolved from pass 1
 	presetData, err := loadPreset(cfg.Gateway.Preset)
 	if err != nil {
 		return nil, fmt.Errorf("loading preset %s: %w", cfg.Gateway.Preset, err)
+	}
+
+	// Build the ordered layer list: defaults → preset → user → project.
+	// Layer stamps drive sticky-block semantics in BuildRuleSetLayered.
+	layers := []rules.LayeredConfig{
+		{Cfg: defaultsCfg, Layer: rules.LayerDefaults, Source: "defaults"},
 	}
 	if presetData != nil {
 		presetCfg, err := rules.ParseConfigBytes(presetData, "preset:"+cfg.Gateway.Preset)
 		if err != nil {
 			return nil, fmt.Errorf("parsing preset: %w", err)
 		}
-		mergedRules = rules.MergeConfig(mergedRules, presetCfg)
+		layers = append(layers, rules.LayeredConfig{Cfg: presetCfg, Layer: rules.LayerPreset, Source: "preset:" + cfg.Gateway.Preset})
 	}
-
-	// 3. User config
-	home, _ := os.UserHomeDir()
-	userConfigPath := filepath.Join(home, ".config", "tidebreak", "tidebreak.conf")
-	if fileExists(userConfigPath) {
-		userCfg, err := rules.ParseConfig(userConfigPath)
-		if err != nil {
-			return nil, fmt.Errorf("user config: %w", err)
-		}
-		if userCfg.Preset != "" {
-			cfg.Gateway.Preset = userCfg.Preset
-		}
-		mergedRules = rules.MergeConfig(mergedRules, userCfg)
+	if userCfg != nil {
+		layers = append(layers, rules.LayeredConfig{Cfg: userCfg, Layer: rules.LayerUser, Source: "user"})
 	}
-
-	// 4. Project-local config
-	if fileExists(".tidebreak.conf") {
-		projCfg, err := rules.ParseConfig(".tidebreak.conf")
-		if err != nil {
-			return nil, fmt.Errorf("project config: %w", err)
-		}
-		if projCfg.Preset != "" {
-			cfg.Gateway.Preset = projCfg.Preset
-		}
-		mergedRules = rules.MergeConfig(mergedRules, projCfg)
+	if projCfg != nil {
+		layers = append(layers, rules.LayeredConfig{Cfg: projCfg, Layer: rules.LayerProject, Source: "project"})
 	}
 
 	// 5. CLI overrides
@@ -134,13 +149,8 @@ func Load(cliPort int, cliPreset string) (*AppConfig, error) {
 		cfg.Gateway.Port = cliPort
 	}
 
-	// Build the rule set
-	if mergedRules == nil {
-		mergedRules = &rules.Config{
-			Patterns: make(map[string]bool),
-		}
-	}
-	cfg.RuleSet = rules.BuildRuleSet(mergedRules, "user")
+	// Build the rule set with cross-layer block protection
+	cfg.RuleSet = rules.BuildRuleSetLayered(layers)
 
 	// Load cloud keys from environment
 	cfg.Cloud.AnthropicKey = os.Getenv("ANTHROPIC_API_KEY")
