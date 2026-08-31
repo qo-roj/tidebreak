@@ -2,9 +2,22 @@ package rules
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+// homePath returns a path under the current user's home directory. Tests
+// must use this instead of hardcoded /home/<name> paths — configs use ~
+// globs, which expand to the test runner's own HOME.
+func homePath(t *testing.T, rel string) string {
+	t.Helper()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return filepath.Join(home, rel)
+}
 
 // ─────────────────────────────────────────────────────────────────────
 // Cross-layer tier resolution (security-critical semantics)
@@ -31,7 +44,7 @@ func TestLayeredPresetCannotDowngradeBlock(t *testing.T) {
 		{Cfg: paranoidCfg, Layer: LayerPreset, Source: "paranoid"},
 	})
 
-	for _, p := range []string{"/home/sid/.ssh/id_ed25519", "/home/sid/.ssh/known_hosts"} {
+	for _, p := range []string{homePath(t, ".ssh/id_ed25519"), homePath(t, ".ssh/known_hosts")} {
 		tier, _ := rs.ClassifyPath(p)
 		if tier != TierBlocked {
 			t.Errorf("preset downgraded blocked path %s to %s — blocks must survive preset layers", p, tier)
@@ -56,7 +69,7 @@ func TestLayeredUserConfigCanHarden(t *testing.T) {
 		{Cfg: userCfg, Layer: LayerUser, Source: "user"},
 	})
 
-	tier, _ := rs.ClassifyPath("/home/sid/.zsh_history")
+	tier, _ := rs.ClassifyPath(homePath(t, ".zsh_history"))
 	if tier != TierBlocked {
 		t.Errorf("user [block] should override defaults [redact], got %s", tier)
 	}
@@ -78,7 +91,7 @@ func TestLayeredUserConfigMayExplicitlyDowngradeBlock(t *testing.T) {
 		{Cfg: userCfg, Layer: LayerUser, Source: "user"},
 	})
 
-	tier, _ := rs.ClassifyPath("/home/sid/.ssh/id_ed25519")
+	tier, _ := rs.ClassifyPath(homePath(t, ".ssh/id_ed25519"))
 	if tier != TierRedacted {
 		t.Errorf("user layer should be able to explicitly downgrade a block, got %s", tier)
 	}
@@ -92,11 +105,11 @@ func TestSameLayerLastMatchWinsStillWorks(t *testing.T) {
 	}
 	rs := BuildRuleSetLayered([]LayeredConfig{{Cfg: cfg, Layer: LayerUser, Source: "test"}})
 
-	tier, _ := rs.ClassifyPath("/home/sid/.ssh/id_rsa")
+	tier, _ := rs.ClassifyPath(homePath(t, ".ssh/id_rsa"))
 	if tier != TierBlocked {
 		t.Errorf("ssh key should be blocked, got %s", tier)
 	}
-	tier, _ = rs.ClassifyPath("/home/sid/.ssh/config")
+	tier, _ = rs.ClassifyPath(homePath(t, ".ssh/config"))
 	if tier != TierRedacted {
 		t.Errorf("ssh config should be whitelisted to redact, got %s", tier)
 	}
@@ -253,10 +266,10 @@ func TestShippedDefaultsClassifySecrets(t *testing.T) {
 		want Tier
 	}{
 		{"/etc/letsencrypt/live/app.example.com/privkey.pem", TierLocalOnly},
-		{"/home/sid/.gnupg/private-keys-v1.d/key.asc", TierBlocked},
-		{"/home/sid/.password-store/work/github.gpg", TierBlocked},
-		{"/home/sid/.ssh/id_ed25519", TierBlocked},
-		{"/home/sid/.zsh_history", TierRedacted},
+		{homePath(t, ".gnupg/private-keys-v1.d/key.asc"), TierBlocked},
+		{homePath(t, ".password-store/work/github.gpg"), TierBlocked},
+		{homePath(t, ".ssh/id_ed25519"), TierBlocked},
+		{homePath(t, ".zsh_history"), TierRedacted},
 	}
 	for _, c := range cases {
 		tier, _ := rs.ClassifyPath(c.path)

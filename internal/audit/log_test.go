@@ -212,11 +212,24 @@ func TestConcurrentWrites(t *testing.T) {
 		<-done
 	}
 
-	time.Sleep(500 * time.Millisecond)
-
-	results, err := log.Query("", time.Time{}, 10000)
-	if err != nil {
-		t.Fatal(err)
+	// Deterministically wait for the async writer to drain the queue —
+	// a fixed sleep is flaky under -race on slow runners (CI saw 307/500
+	// in 500ms). Poll up to 10s; fail fast on query errors.
+	deadline := time.Now().Add(10 * time.Second)
+	var results []Entry
+	for {
+		var err error
+		results, err = log.Query("", time.Time{}, 10000)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(results) == 500 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected 500 entries, got %d after 10s (async writer did not drain)", len(results))
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 
 	if len(results) != 500 {
