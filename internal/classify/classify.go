@@ -45,11 +45,13 @@ func New(rs *rules.RuleSet) *Classifier {
 }
 
 // ClassifyBlock determines the tier for a single content block.
+// The agent parameter enables per-agent rule overrides (agent-specific
+// [agent:<name>] sections in config). Pass "" to use global rules only.
 // Classification order (first match wins, most specific first):
 //  1. Command rules (if block is a tool result with a command)
-//  2. Path rules (if block contains a file path)
+//  2. Path rules (if block contains a file path) — with agent overrides
 //  3. Pattern-based classification (scan content for sensitive patterns)
-func (c *Classifier) ClassifyBlock(block ContentBlock) ClassificationResult {
+func (c *Classifier) ClassifyBlock(block ContentBlock, agent string) ClassificationResult {
 	// 1. Command rules — if this is a tool result with a command
 	if block.IsToolResult && block.Command != "" {
 		tier, source := c.classifyCommand(block.Command)
@@ -64,8 +66,9 @@ func (c *Classifier) ClassifyBlock(block ContentBlock) ClassificationResult {
 	}
 
 	// 2. Path rules — if block references a file path
+	// Use ClassifyPathForAgent so per-agent overrides take precedence
 	if block.FilePath != "" {
-		tier, source := c.ruleSet.ClassifyPath(block.FilePath)
+		tier, source := c.ruleSet.ClassifyPathForAgent(block.FilePath, agent)
 		if tier != rules.TierPublic || source != "default" {
 			return ClassificationResult{
 				Tier:   tier,
@@ -77,7 +80,7 @@ func (c *Classifier) ClassifyBlock(block ContentBlock) ClassificationResult {
 	}
 
 	// 3. Pattern-based — scan content for file paths and classify them
-	tier := c.classifyByContent(block.Content)
+	tier := c.classifyByContent(block.Content, agent)
 	if tier != rules.TierPublic {
 		return ClassificationResult{
 			Tier:   tier,
@@ -133,13 +136,14 @@ func (c *Classifier) classifyCommand(cmd string) (rules.Tier, string) {
 
 // classifyByContent scans content for file paths and sensitive patterns.
 // If a file path is found that matches a path rule, the tier is escalated.
-func (c *Classifier) classifyByContent(content string) rules.Tier {
+// The agent parameter enables per-agent path overrides.
+func (c *Classifier) classifyByContent(content string, agent string) rules.Tier {
 	highestTier := rules.TierPublic
 
 	// Extract potential file paths from content
 	paths := extractPaths(content)
 	for _, path := range paths {
-		tier, _ := c.ruleSet.ClassifyPath(path)
+		tier, _ := c.ruleSet.ClassifyPathForAgent(path, agent)
 		if tier > highestTier {
 			highestTier = tier
 		}

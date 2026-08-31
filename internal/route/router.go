@@ -87,7 +87,7 @@ func (r *Router) ProcessRequest(body []byte, agent string, provider string) (ctx
 
 		block := blocks[blockIdx]
 		blockIdx++
-		result := r.Classifier.ClassifyBlock(block)
+		result := r.Classifier.ClassifyBlock(block, agent)
 
 		switch result.Tier {
 		case rules.TierBlocked:

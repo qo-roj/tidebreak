@@ -24,7 +24,7 @@ func TestClassifyBlockPublic(t *testing.T) {
 		Role:    "system",
 	}
 
-	result := c.ClassifyBlock(block)
+	result := c.ClassifyBlock(block, "")
 	if result.Tier != rules.TierPublic {
 		t.Errorf("expected public, got %s", result.Tier)
 	}
@@ -39,7 +39,7 @@ func TestClassifyBlockBlockedByPath(t *testing.T) {
 		Role:     "user",
 	}
 
-	result := c.ClassifyBlock(block)
+	result := c.ClassifyBlock(block, "")
 	if result.Tier != rules.TierBlocked {
 		t.Errorf("expected blocked, got %s", result.Tier)
 	}
@@ -54,7 +54,7 @@ func TestClassifyBlockRedactedByPath(t *testing.T) {
 		Role:     "user",
 	}
 
-	result := c.ClassifyBlock(block)
+	result := c.ClassifyBlock(block, "")
 	if result.Tier != rules.TierRedacted {
 		t.Errorf("expected redacted, got %s", result.Tier)
 	}
@@ -69,7 +69,7 @@ func TestClassifyBlockLocalOnlyByPath(t *testing.T) {
 		Role:     "user",
 	}
 
-	result := c.ClassifyBlock(block)
+	result := c.ClassifyBlock(block, "")
 	if result.Tier != rules.TierLocalOnly {
 		t.Errorf("expected local-only, got %s", result.Tier)
 	}
@@ -83,7 +83,7 @@ func TestClassifyBlockContentContainsPath(t *testing.T) {
 		Role:    "user",
 	}
 
-	result := c.ClassifyBlock(block)
+	result := c.ClassifyBlock(block, "")
 	if result.Tier != rules.TierBlocked {
 		t.Errorf("expected blocked due to /etc/shadow in content, got %s", result.Tier)
 	}
@@ -97,7 +97,7 @@ func TestClassifyBlockContentContainsLogPath(t *testing.T) {
 		Role:    "user",
 	}
 
-	result := c.ClassifyBlock(block)
+	result := c.ClassifyBlock(block, "")
 	if result.Tier != rules.TierRedacted {
 		t.Errorf("expected redacted due to /var/log/ path in content, got %s", result.Tier)
 	}
@@ -222,8 +222,43 @@ func TestClassifyBlockSSSKey(t *testing.T) {
 		Role:     "user",
 	}
 
-	result := c.ClassifyBlock(block)
+	result := c.ClassifyBlock(block, "")
 	if result.Tier != rules.TierBlocked {
 		t.Errorf("expected blocked for SSH key, got %s", result.Tier)
+	}
+}
+
+// TestClassifyBlockAgentOverride verifies that per-agent overrides actually
+// take effect — the regression test for the v0.2.0 bug where AgentOverrides
+// were built but never consulted (ClassifyBlock ignored the agent parameter).
+func TestClassifyBlockAgentOverride(t *testing.T) {
+	// Global rules: /tmp/project/ is public (no rule matches).
+	// Agent override for "claude": /tmp/project/secret.go is blocked.
+	cfg := &rules.Config{
+		AgentRules: map[string]*rules.Config{
+			"claude": {
+				Blocks: []string{"/tmp/project/secret.go"},
+			},
+		},
+	}
+	rs := rules.BuildRuleSet(cfg, "test")
+	c := New(rs)
+
+	block := ContentBlock{
+		Content:  "package main",
+		FilePath: "/tmp/project/secret.go",
+		Role:     "user",
+	}
+
+	// Without agent — global rules apply, should be public.
+	result := c.ClassifyBlock(block, "")
+	if result.Tier != rules.TierPublic {
+		t.Errorf("without agent: expected public, got %s", result.Tier)
+	}
+
+	// With agent — override applies, should be blocked.
+	result = c.ClassifyBlock(block, "claude")
+	if result.Tier != rules.TierBlocked {
+		t.Errorf("with agent=claude: expected blocked, got %s", result.Tier)
 	}
 }
