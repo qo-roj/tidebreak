@@ -64,6 +64,7 @@ Agent ──▶ Tidebreak (localhost:8842) ──▶ ┌── Cloud API (scrubb
 ## Features
 
 - **Pattern redaction** — IPv4/IPv6, emails, phone numbers, API keys (GitHub, OpenAI, AWS, Anthropic, Google, Stripe, Slack, GitLab), JWTs, private keys, MAC addresses, credit cards, SSNs, database connection strings
+- **`tidebreak text`** — one-off redaction of text, files, or piped stdin for safe pasting into any web UI (ChatGPT, chatbots, tickets); `--out` writes a file, `--summary` lists what was caught
 - **Agent auto-detection** — identifies agents by `X-Tidebreak-Agent` header or `User-Agent` string (Claude Code, Codex, OpenCode, Hermes, Cursor, Aider, Cline, GitHub Copilot, Grok CLI)
 - **Path-based rules** — block / local-only / redact entire directories
 - **Two-model routing** — cloud for reasoning on scrubbed data, Ollama for sensitive data

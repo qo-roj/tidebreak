@@ -28,8 +28,13 @@ func DefaultPatterns() []*Pattern {
 
 		// API keys — specific prefixes, run before phone/credit card
 		{
-			Name:     "api_key_github",
-			Regex:    regexp.MustCompile(`\b(?:ghp|gho|ghs|ghu|ghr)_[A-Za-z0-9]{36,}\b`),
+			Name: "api_key_github",
+			// Classic PATs (ghp_…) and fine-grained PATs (github_pat_…).
+			// Fine-grained: github_pat_ + 22+ base62/underscore chars; classic:
+			// ghp_/gho_/ghs_/ghu_/ghr_ + 36+ base62 chars. {22,} not {22} so
+			// longer bodies still match; underscores allowed in fine-grained
+			// bodies per GitHub's generator.
+			Regex:    regexp.MustCompile(`\b(?:(?:ghp|gho|ghs|ghu|ghr)_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{22,})\b`),
 			Category: "TOKEN",
 			Enabled:  true,
 		},

@@ -40,6 +40,8 @@ func main() {
 		cmdClassify(os.Args[2:])
 	case "dry-run":
 		cmdDryRun(os.Args[2:])
+	case "text":
+		cmdText(os.Args[2:])
 	case "config":
 		cmdConfig(os.Args[2:])
 	case "install":
@@ -67,6 +69,7 @@ Commands:
   start          Start the gateway proxy
   audit          Query the audit log
   classify       Test how a file would be classified
+  text           Redact text/file/stdin for safe pasting (clean output)
   config         Edit or view configuration
   install        Configure an agent to use Tidebreak
   setup-ollama   Configure local Ollama model
