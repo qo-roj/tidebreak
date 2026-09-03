@@ -194,6 +194,31 @@ func ExtendedPatterns() []*Pattern {
 			Category: "SECRET",
 			Enabled:  false,
 		},
+
+		// Syslog hostname — structure-anchored (Group 1 = hostname). A bare
+		// hostname regex would false-positive on ordinary words; anchoring on
+		// the line-start timestamp keeps precision. Timestamps stay readable.
+		{
+			Name:     "syslog_hostname",
+			Regex:    regexp.MustCompile(`(?m)^(?:[A-Z][a-z]{2}\s{1,2}\d{1,2}\s\d{2}:\d{2}:\d{2}|\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:[+-]\d{2}:?\d{2}|Z)?|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s{1,2}\d{1,2}\s\d{2}:\d{2}:\d{2})\s([a-zA-Z0-9][a-zA-Z0-9._-]*)`),
+			Category: "HOST",
+			Group:    1,
+			Enabled:  false,
+		},
+
+		// passwd username — structure-anchored (Group 1 = username). Anchored
+		// on the rigid passwd/shadow line shape: name at line start followed
+		// by the x/uid/gid numeric fields. The GECOS comment field and home
+		// path survive; only the account name is tokenized.
+		{
+			Name:     "passwd_username",
+			Regex:    regexp.MustCompile(`(?m)^([a-z_][a-z0-9_-]{0,31})[:!]\$?[a-zA-Z0-9!$%./]{1,128}(?::\d{1,10}){2}`),
+			Category: "USER",
+			Group:    1,
+			Enabled:  false,
+			// Not in default set: only redact when the file itself looks like
+			// passwd; otherwise every "user:pass" colon pair in prose matches.
+		},
 	}
 	return append(DefaultPatterns(), extra...)
 }
@@ -207,6 +232,7 @@ var patternNames = []string{
 	"api_key_slack", "api_key_gitlab", "bearer_token", "email", "ipv4", "ipv6",
 	"mac_address", "database_connection", "credit_card", "ssn_us", "phone",
 	"ipv4_private", "hostname_internal", "iban", "passport", "high_entropy_secret",
+	"syslog_hostname", "passwd_username",
 }
 
 // AllPatterns returns every known pattern (defaults plus extended). Extended

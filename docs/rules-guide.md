@@ -107,6 +107,8 @@ Built-in patterns:
 | `private_key` | PEM private keys | `-----BEGIN ... PRIVATE KEY-----` | `[KEY_BLOCKED]` |
 | `mac_address` | MAC addresses | `00:1B:44:11:3A:B7` | `[MAC_REDACTED_1]` |
 | `credit_card` | Credit card numbers | `4111 1111 1111 1111` | `[CC_REDACTED_1]` |
+| `syslog_hostname` | Hostnames in syslog-style timestamped lines (structure-anchored: timestamp stays, hostname tokenized) | `Sep  3 17:54:01 web01 …` | `Sep  3 17:54:01 [HOST_REDACTED_1] …` |
+| `passwd_username` | Account names in passwd/shadow-style lines (structure-anchored: field layout stays, name tokenized) | `alice:x:1000:1000:…` | `[USER_REDACTED_1]:x:1000:1000:…` |
 
 ### Custom Patterns
 

@@ -21,6 +21,12 @@ type Pattern struct {
 	Regex    *regexp.Regexp
 	Category string // token category, e.g. "IP", "EMAIL", "KEY"
 	Enabled  bool
+	// Group, when > 0, redacts only that capture group's span instead of the
+	// whole match. Used for structure-anchored patterns where context must
+	// survive: e.g. a syslog line's timestamp anchors the match but must stay
+	// readable, while the hostname (group 1) is redacted. Go's RE2 has no
+	// lookbehind, so group-span replacement is the only way to express this.
+	Group int
 }
 
 // Redactor holds active patterns and the token mapping for the current request.
@@ -92,10 +98,29 @@ func (r *Redactor) Redact(content string) (string, Summary) {
 		// token. ReplaceAllString would replace ALL matches with a single token,
 		// collapsing distinct values (e.g. two different IPs → same token).
 		matchCount := 0
-		result = p.Regex.ReplaceAllStringFunc(result, func(match string) string {
-			matchCount++
-			return r.allocateToken(p, match)
-		})
+		if p.Group > 0 {
+			// Structure-anchored pattern: redact only the capture-group span,
+			// keep the anchoring context (timestamp, field separators).
+			result = p.Regex.ReplaceAllStringFunc(result, func(match string) string {
+				loc := p.Regex.FindStringSubmatchIndex(match)
+				if len(loc) < 2*p.Group+2 {
+					return match // group missing in this match — leave untouched
+				}
+				start, end := loc[2*p.Group], loc[2*p.Group+1]
+				if start < 0 || end < 0 || start >= end {
+					return match // group didn't participate — leave untouched
+				}
+				value := match[start:end]
+				token := r.allocateToken(p, value)
+				matchCount++
+				return match[:start] + token + match[end:]
+			})
+		} else {
+			result = p.Regex.ReplaceAllStringFunc(result, func(match string) string {
+				matchCount++
+				return r.allocateToken(p, match)
+			})
+		}
 		if matchCount > 0 {
 			summary[p.Name] = matchCount
 		}

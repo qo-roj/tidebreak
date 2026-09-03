@@ -1,6 +1,7 @@
 package route
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/qo-roj/tidebreak/internal/rules"
@@ -76,5 +77,32 @@ ipv4_private = true
 	out, _ := red.Redact("proxy_pass http://10.0.0.5:8080")
 	if out == "proxy_pass http://10.0.0.5:8080" {
 		t.Error("ipv4_private toggle did not activate the extended pattern")
+	}
+}
+
+// Structure-anchored patterns (syslog hostname, passwd username) must activate
+// through the config toggle path — regression test for the 2026-09-03
+// syslog/passwd hostname/username leaks.
+func TestStructurePatternsActivateViaToggle(t *testing.T) {
+	cfg, err := rules.ParseConfigBytes([]byte(`
+[redaction.patterns]
+syslog_hostname = true
+passwd_username = true
+`), "user")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rs := rules.BuildRuleSet(cfg, "user")
+	r := New(rs, nil, nil)
+	red := r.newRedactor()
+
+	out, _ := red.Redact("Sep  3 17:54:01 himbeerkuchen systemd[1]: Started apt.\n")
+	if !strings.Contains(out, "Sep  3 17:54:01 [TB:HOST:1] systemd[1]") {
+		t.Errorf("syslog_hostname toggle inactive: %q", out)
+	}
+
+	out, _ = red.Redact("sid:x:1000:1000:Sid:/home/sid:/usr/bin/fish\n")
+	if !strings.HasPrefix(out, "[TB:USER:1]:x:1000:1000:") {
+		t.Errorf("passwd_username toggle inactive: %q", out)
 	}
 }
