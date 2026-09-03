@@ -25,8 +25,31 @@ lint:
 clean:
 	rm -rf bin/ dist/
 
+# Install for the current user. Default scope "auto": /usr/local/bin when
+# writable, otherwise ~/.local/bin.
+# Override with:  make install PREFIX=/usr/local/bin   or   PREFIX=~/.local/bin
+PREFIX ?= auto
+
 install: build
-	cp bin/$(BINARY) ~/.local/bin/$(BINARY)
+	@if [ "$(PREFIX)" = "auto" ] || [ -z "$(PREFIX)" ]; then \
+		if [ -w /usr/local/bin ]; then \
+			echo "install: /usr/local/bin is writable"; \
+			cp bin/$(BINARY) /usr/local/bin/$(BINARY); \
+			echo "✓ installed to /usr/local/bin/$(BINARY)"; \
+		else \
+			echo "install: /usr/local/bin not writable, using ~/.local/bin (run 'make install PREFIX=/usr/local/bin' with sudo for system-wide)"; \
+			mkdir -p $(HOME)/.local/bin; \
+			cp bin/$(BINARY) $(HOME)/.local/bin/$(BINARY); \
+			echo "✓ installed to $(HOME)/.local/bin/$(BINARY)"; \
+			if ! echo ":$$PATH:" | grep -q ":$(HOME)/.local/bin:"; then \
+				echo "⚠ $(HOME)/.local/bin is not in PATH — add: export PATH=\"$$HOME/.local/bin:$$PATH\""; \
+			fi; \
+		fi; \
+	else \
+		mkdir -p $(PREFIX); \
+		cp bin/$(BINARY) $(PREFIX)/$(BINARY); \
+		echo "✓ installed to $(PREFIX)/$(BINARY)"; \
+	fi
 
 # Cross-compile for all platforms
 dist:

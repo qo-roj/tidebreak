@@ -7,13 +7,20 @@ set -euo pipefail
 #   TIDEBREAK_MIRROR=https://mirror.local bash install.sh       # Fleet mirror
 #   bash install.sh --local /path/to/tidebreak-binary          # Local binary (dev)
 #   bash install.sh --build                                     # Build from source (needs Go)
+#   bash install.sh --system                                    # /usr/local/bin (needs sudo)
+#   bash install.sh --user                                      # ~/.local/bin (default fallback)
+#   bash install.sh --add-to-path                               # Also write PATH entry to ~/.profile
+#
+# Default scope is "auto": install to /usr/local/bin when it is writable
+# (or passwordless sudo exists), otherwise ~/.local/bin.
 
 VERSION="${VERSION:-latest}"
-INSTALL_DIR="${HOME}/.local/bin"
 CONFIG_DIR="${HOME}/.config/tidebreak"
 DATA_DIR="${HOME}/.local/share/tidebreak"
 LOCAL_BINARY=""
 DO_BUILD=false
+INSTALL_SCOPE="auto"   # auto | user | system
+ADD_TO_PATH=false
 
 # Parse args
 while [[ $# -gt 0 ]]; do
@@ -21,9 +28,47 @@ while [[ $# -gt 0 ]]; do
         --local)    LOCAL_BINARY="$2"; shift 2 ;;
         --build)   DO_BUILD=true; shift ;;
         --version) VERSION="$2"; shift 2 ;;
+        --user)    INSTALL_SCOPE="user"; shift ;;
+        --system)  INSTALL_SCOPE="system"; shift ;;
+        --add-to-path) ADD_TO_PATH=true; shift ;;
         *) echo "Unknown arg: $1"; exit 1 ;;
     esac
 done
+
+# Resolve install directory.
+#
+# System paths work out of the box on every distro; ~/.local/bin needs a PATH
+# entry many users don't have (Linux Mint, stock Debian, etc.). Scope "auto"
+# picks a system path when we can write to one without an interactive sudo
+# prompt breaking `curl | bash`; otherwise falls back to ~/.local/bin.
+SYSTEM_DIR="/usr/local/bin"
+install_dir_user="${HOME}/.local/bin"
+
+dir_writable() {
+    [[ -d "$1" && -w "$1" ]]
+}
+
+can_sudo() {
+    command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null
+}
+
+if [[ "$INSTALL_SCOPE" == "system" ]]; then
+    if dir_writable "$SYSTEM_DIR" || can_sudo; then
+        INSTALL_DIR="$SYSTEM_DIR"
+    else
+        echo "✗ Cannot install system-wide: $SYSTEM_DIR is not writable and sudo needs a password."
+        echo "  Run with --user, or rerun interactively so sudo can prompt."
+        exit 1
+    fi
+elif [[ "$INSTALL_SCOPE" == "user" ]]; then
+    INSTALL_DIR="$install_dir_user"
+else
+    if dir_writable "$SYSTEM_DIR"; then
+        INSTALL_DIR="$SYSTEM_DIR"
+    else
+        INSTALL_DIR="$install_dir_user"
+    fi
+fi
 
 # Mirror URL (can be overridden for fleet/private hosting)
 DOWNLOAD_BASE="${TIDEBREAK_MIRROR:-https://github.com/qo-roj/tidebreak/releases}"
@@ -50,15 +95,30 @@ esac
 echo "Detected: ${PLATFORM}/${ARCH}"
 echo ""
 
-# Create directories
-mkdir -p "$INSTALL_DIR" "$CONFIG_DIR" "$DATA_DIR"
+# Place a staged binary into $INSTALL_DIR, using sudo when the dir is not
+# directly writable (passwordless sudo only; a password prompt inside
+# `curl | bash` breaks stdin).
+install_binary() {
+    local staged="$1"
+    if dir_writable "$INSTALL_DIR"; then
+        cp "$staged" "${INSTALL_DIR}/tidebreak"
+        chmod +x "${INSTALL_DIR}/tidebreak"
+    elif can_sudo; then
+        sudo -n install -m 0755 "$staged" "${INSTALL_DIR}/tidebreak"
+    else
+        echo "✗ Cannot write to ${INSTALL_DIR} and no passwordless sudo available."
+        exit 1
+    fi
+    echo "✓ Binary installed to ${INSTALL_DIR}/tidebreak"
+}
+
+# Create directories (user install dir; system dirs are expected to exist)
+mkdir -p "$install_dir_user" "$CONFIG_DIR" "$DATA_DIR"
 
 # Install method 1: local binary (development)
 if [[ -n "$LOCAL_BINARY" ]]; then
     echo "Installing from local binary: $LOCAL_BINARY"
-    cp "$LOCAL_BINARY" "${INSTALL_DIR}/tidebreak"
-    chmod +x "${INSTALL_DIR}/tidebreak"
-    echo "✓ Binary installed to ${INSTALL_DIR}/tidebreak"
+    install_binary "$LOCAL_BINARY"
 
 # Install method 2: build from source
 elif [[ "$DO_BUILD" == true ]]; then
@@ -73,10 +133,12 @@ elif [[ "$DO_BUILD" == true ]]; then
         echo "  use --local /path/to/binary or build manually."
         exit 1
     }
-    cd "$TMP_SRC" && go build -o "${INSTALL_DIR}/tidebreak" ./cmd/tidebreak
-    chmod +x "${INSTALL_DIR}/tidebreak"
+    STAGED="$(mktemp)"
+    (cd "$TMP_SRC" && go build -o "$STAGED" ./cmd/tidebreak)
     rm -rf "$TMP_SRC"
-    echo "✓ Built and installed to ${INSTALL_DIR}/tidebreak"
+    install_binary "$STAGED"
+    rm -f "$STAGED"
+    echo "✓ Built and installed"
 
 # Install method 3: download from mirror/GitHub releases
 else
@@ -90,9 +152,10 @@ else
     echo "  Source: ${DOWNLOAD_URL}"
     echo ""
 
-    if curl -fsSL "$DOWNLOAD_URL" -o "${INSTALL_DIR}/tidebreak" 2>/dev/null; then
-        chmod +x "${INSTALL_DIR}/tidebreak"
-        echo "✓ Binary installed to ${INSTALL_DIR}/tidebreak"
+    STAGED="$(mktemp)"
+    if curl -fsSL "$DOWNLOAD_URL" -o "$STAGED" 2>/dev/null; then
+        install_binary "$STAGED"
+        rm -f "$STAGED"
     else
         echo "✗ Failed to download from ${DOWNLOAD_URL}"
         echo ""
@@ -111,11 +174,31 @@ else
 fi
 
 # Check if binary is in PATH
-if [[ ":$PATH:" != *":${INSTALL_DIR}:"* ]]; then
-    echo ""
-    echo "⚠ ${INSTALL_DIR} is not in your PATH."
-    echo "  Add this to your shell profile:"
-    echo "    export PATH=\"${INSTALL_DIR}:\$PATH\""
+path_in_path() {
+    [[ ":$PATH:" == *":${1}:"* ]]
+}
+
+if ! path_in_path "$INSTALL_DIR"; then
+    if [[ "$ADD_TO_PATH" == true ]]; then
+        PROFILE_FILE="${HOME}/.profile"
+        touch "$PROFILE_FILE"
+        if ! grep -qs "TIDEBREAK_PATH" "$PROFILE_FILE"; then
+            {
+                echo ""
+                echo "# TIDEBREAK_PATH — added by tidebreak installer"
+                echo "export PATH=\"${INSTALL_DIR}:\$PATH\""
+            } >> "$PROFILE_FILE"
+            echo "✓ Added ${INSTALL_DIR} to PATH via ${PROFILE_FILE}"
+            echo "  Start a new shell (or: source ${PROFILE_FILE}) to pick it up."
+        else
+            echo "✓ ${PROFILE_FILE} already contains the PATH entry"
+        fi
+    else
+        echo ""
+        echo "⚠ ${INSTALL_DIR} is not in your PATH."
+        echo "  Fix it permanently by re-running with --add-to-path, or add this to your shell profile:"
+        echo "    export PATH=\"${INSTALL_DIR}:\$PATH\""
+    fi
 fi
 
 # Create default config if it doesn't exist

@@ -28,13 +28,19 @@ tidebreak start             # start gateway
 tidebreak install --all     # configure your agents
 ```
 
+The script installs to `/usr/local/bin` when possible (writable, or
+passwordless sudo) and falls back to `~/.local/bin`. If the fallback lands
+outside your PATH, it tells you — re-run with `--add-to-path` to write the
+PATH entry into `~/.profile` automatically. Explicit control:
+`bash install.sh --system` or `--user`.
+
 ### Option B — Build from source (requires Go 1.25+)
 
 ```bash
 git clone https://github.com/qo-roj/tidebreak.git
 cd tidebreak
 make build
-make install                # installs to ~/.local/bin/tidebreak
+make install                # /usr/local/bin if writable, else ~/.local/bin
 tidebreak setup-ollama
 tidebreak start
 tidebreak install --all
