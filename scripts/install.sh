@@ -9,10 +9,14 @@ set -euo pipefail
 #   bash install.sh --build                                     # Build from source (needs Go)
 #   bash install.sh --system                                    # /usr/local/bin (needs sudo)
 #   bash install.sh --user                                      # ~/.local/bin (default fallback)
-#   bash install.sh --add-to-path                               # Also write PATH entry to ~/.profile
+#   bash install.sh --no-path-edit                              # Don't touch shell rc files
 #
 # Default scope is "auto": install to /usr/local/bin when it is writable
-# (or passwordless sudo exists), otherwise ~/.local/bin.
+# (or passwordless sudo exists), otherwise ~/.local/bin. If the chosen
+# directory is not in PATH, the installer writes the PATH entry into the
+# rc file of your login shell (~/.bashrc, ~/.zshrc, fish config) plus
+# ~/.profile automatically — open a new terminal to pick it up.
+# (--add-to-path is accepted as a deprecated no-op; this is now automatic.)
 
 VERSION="${VERSION:-latest}"
 CONFIG_DIR="${HOME}/.config/tidebreak"
@@ -20,7 +24,7 @@ DATA_DIR="${HOME}/.local/share/tidebreak"
 LOCAL_BINARY=""
 DO_BUILD=false
 INSTALL_SCOPE="auto"   # auto | user | system
-ADD_TO_PATH=false
+NO_PATH_EDIT=false
 
 # Parse args
 while [[ $# -gt 0 ]]; do
@@ -30,7 +34,8 @@ while [[ $# -gt 0 ]]; do
         --version) VERSION="$2"; shift 2 ;;
         --user)    INSTALL_SCOPE="user"; shift ;;
         --system)  INSTALL_SCOPE="system"; shift ;;
-        --add-to-path) ADD_TO_PATH=true; shift ;;
+        --no-path-edit) NO_PATH_EDIT=true; shift ;;
+        --add-to-path) shift ;;   # deprecated: PATH edit is automatic now
         *) echo "Unknown arg: $1"; exit 1 ;;
     esac
 done
@@ -48,16 +53,32 @@ dir_writable() {
     [[ -d "$1" && -w "$1" ]]
 }
 
+# Interactive? When the script itself is piped (curl | bash), stdin is the
+# pipe and a sudo password prompt would collide with script streaming; only
+# allow prompting sudo when stdin is a real tty (script run from a file).
+INTERACTIVE=false
+if [ -t 0 ]; then INTERACTIVE=true; fi
+
+sudo_cmd() {
+    if [[ "$INTERACTIVE" == true ]]; then
+        sudo "$@"
+    else
+        sudo -n "$@"
+    fi
+}
+
 can_sudo() {
-    command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null
+    command -v sudo >/dev/null 2>&1 && sudo_cmd true 2>/dev/null
 }
 
 if [[ "$INSTALL_SCOPE" == "system" ]]; then
     if dir_writable "$SYSTEM_DIR" || can_sudo; then
         INSTALL_DIR="$SYSTEM_DIR"
     else
-        echo "✗ Cannot install system-wide: $SYSTEM_DIR is not writable and sudo needs a password."
-        echo "  Run with --user, or rerun interactively so sudo can prompt."
+        echo "✗ Cannot install system-wide: $SYSTEM_DIR is not writable and sudo is unavailable."
+        echo "  Passwordless sudo works non-interactively; otherwise download and run interactively:"
+        echo "    curl -fsSL <installer-url> -o install.sh && bash install.sh --system"
+        echo "  Or install to your user directory: bash install.sh --user"
         exit 1
     fi
 elif [[ "$INSTALL_SCOPE" == "user" ]]; then
@@ -96,17 +117,17 @@ echo "Detected: ${PLATFORM}/${ARCH}"
 echo ""
 
 # Place a staged binary into $INSTALL_DIR, using sudo when the dir is not
-# directly writable (passwordless sudo only; a password prompt inside
-# `curl | bash` breaks stdin).
+# directly writable (prompting allowed when interactive, passwordless only
+# when piped).
 install_binary() {
     local staged="$1"
     if dir_writable "$INSTALL_DIR"; then
         cp "$staged" "${INSTALL_DIR}/tidebreak"
         chmod +x "${INSTALL_DIR}/tidebreak"
     elif can_sudo; then
-        sudo -n install -m 0755 "$staged" "${INSTALL_DIR}/tidebreak"
+        sudo_cmd install -m 0755 "$staged" "${INSTALL_DIR}/tidebreak"
     else
-        echo "✗ Cannot write to ${INSTALL_DIR} and no passwordless sudo available."
+        echo "✗ Cannot write to ${INSTALL_DIR} and no sudo available."
         exit 1
     fi
     echo "✓ Binary installed to ${INSTALL_DIR}/tidebreak"
@@ -173,31 +194,67 @@ else
     fi
 fi
 
-# Check if binary is in PATH
+# Check if binary is in PATH; if not, add it to the rc files automatically
 path_in_path() {
     [[ ":$PATH:" == *":${1}:"* ]]
 }
 
 if ! path_in_path "$INSTALL_DIR"; then
-    if [[ "$ADD_TO_PATH" == true ]]; then
+    if [[ "$NO_PATH_EDIT" == true ]]; then
+        echo ""
+        echo "⚠ ${INSTALL_DIR} is not in your PATH and --no-path-edit given."
+        echo "  Add it yourself: export PATH=\"${INSTALL_DIR}:\$PATH\""
+    else
+        # ~/.profile — sourced by login shells (Mint, Ubuntu, Debian); covers
+        # the session PATH even when the interactive shell uses a different rc.
+        EDITED=""
         PROFILE_FILE="${HOME}/.profile"
-        touch "$PROFILE_FILE"
-        if ! grep -qs "TIDEBREAK_PATH" "$PROFILE_FILE"; then
+        if [[ ! -f "$PROFILE_FILE" ]] || ! grep -qs "TIDEBREAK_PATH" "$PROFILE_FILE"; then
             {
                 echo ""
                 echo "# TIDEBREAK_PATH — added by tidebreak installer"
                 echo "export PATH=\"${INSTALL_DIR}:\$PATH\""
             } >> "$PROFILE_FILE"
-            echo "✓ Added ${INSTALL_DIR} to PATH via ${PROFILE_FILE}"
-            echo "  Start a new shell (or: source ${PROFILE_FILE}) to pick it up."
-        else
-            echo "✓ ${PROFILE_FILE} already contains the PATH entry"
+            EDITED="${PROFILE_FILE}"
         fi
-    else
+
+        # Login shell's interactive rc — what a fresh terminal actually reads.
+        # Mint/GNOME terminals are non-login bash shells: they read .bashrc
+        # ONLY, not .profile, so without this the command stays missing until
+        # the next full login/reboot.
+        SHELL_NAME="$(basename "${SHELL:-/bin/bash}")"
+        case "$SHELL_NAME" in
+            bash)
+                RC_FILE="${HOME}/.bashrc"
+                if [[ ! -f "$RC_FILE" ]] || ! grep -qs "TIDEBREAK_PATH" "$RC_FILE"; then
+                    { echo ""; echo "# TIDEBREAK_PATH — added by tidebreak installer"; echo "export PATH=\"${INSTALL_DIR}:\$PATH\""; } >> "$RC_FILE"
+                    EDITED="${EDITED:+$EDITED and }${RC_FILE}"
+                fi
+                ;;
+            zsh)
+                RC_FILE="${HOME}/.zshrc"
+                if [[ ! -f "$RC_FILE" ]] || ! grep -qs "TIDEBREAK_PATH" "$RC_FILE"; then
+                    { echo ""; echo "# TIDEBREAK_PATH — added by tidebreak installer"; echo "export PATH=\"${INSTALL_DIR}:\$PATH\""; } >> "$RC_FILE"
+                    EDITED="${EDITED:+$EDITED and }${RC_FILE}"
+                fi
+                ;;
+            fish)
+                RC_FILE="${HOME}/.config/fish/config.fish"
+                mkdir -p "$(dirname "$RC_FILE")"
+                if [[ ! -f "$RC_FILE" ]] || ! grep -qs "TIDEBREAK_PATH" "$RC_FILE"; then
+                    { echo ""; echo "# TIDEBREAK_PATH — added by tidebreak installer"; echo "set -gx PATH ${INSTALL_DIR} \$PATH"; } >> "$RC_FILE"
+                    EDITED="${EDITED:+$EDITED and }${RC_FILE}"
+                fi
+                ;;
+        esac
+
         echo ""
-        echo "⚠ ${INSTALL_DIR} is not in your PATH."
-        echo "  Fix it permanently by re-running with --add-to-path, or add this to your shell profile:"
-        echo "    export PATH=\"${INSTALL_DIR}:\$PATH\""
+        if [[ -n "$EDITED" ]]; then
+            echo "✓ Added ${INSTALL_DIR} to PATH via ${EDITED}"
+            echo "  Open a NEW terminal (or run: source ~/.bashrc) and tidebreak will be found."
+        else
+            echo "✓ PATH entry already present in your rc files."
+        fi
     fi
 fi
 

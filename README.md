@@ -29,10 +29,12 @@ tidebreak install --all     # configure your agents
 ```
 
 The script installs to `/usr/local/bin` when possible (writable, or
-passwordless sudo) and falls back to `~/.local/bin`. If the fallback lands
-outside your PATH, it tells you — re-run with `--add-to-path` to write the
-PATH entry into `~/.profile` automatically. Explicit control:
-`bash install.sh --system` or `--user`.
+passwordless sudo; run it interactively with `--system` to use passworded
+sudo) and falls back to `~/.local/bin`. If the fallback lands outside your
+PATH, the installer **automatically** writes the PATH entry into your
+shell's rc file (`~/.bashrc`, `~/.zshrc`, fish config) and `~/.profile` —
+open a new terminal and it works. Pass `--no-path-edit` to keep the old
+warn-only behavior.
 
 ### Option B — Build from source (requires Go 1.25+)
 
