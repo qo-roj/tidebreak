@@ -197,22 +197,31 @@ func ExtendedPatterns() []*Pattern {
 
 		// Syslog hostname — structure-anchored (Group 1 = hostname). A bare
 		// hostname regex would false-positive on ordinary words; anchoring on
-		// the line-start timestamp keeps precision. Timestamps stay readable.
+		// the line-start timestamp plus the `process[pid]:` tag shape keeps
+		// precision — every real syslog line carries a process word before
+		// the message colon. Dated prose ("Jan 15 09:30:00 all hands on
+		// deck") lacks that tag and stays untouched. Timestamps, process and
+		// pid all stay readable; only the hostname is tokenized.
 		{
 			Name:     "syslog_hostname",
-			Regex:    regexp.MustCompile(`(?m)^(?:[A-Z][a-z]{2}\s{1,2}\d{1,2}\s\d{2}:\d{2}:\d{2}|\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:[+-]\d{2}:?\d{2}|Z)?|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s{1,2}\d{1,2}\s\d{2}:\d{2}:\d{2})\s([a-zA-Z0-9][a-zA-Z0-9._-]*)`),
+			Regex:    regexp.MustCompile(`(?m)^(?:[A-Z][a-z]{2}\s{1,2}\d{1,2}\s\d{2}:\d{2}:\d{2}|\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:[+-]\d{2}:?\d{2}|Z)?|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s{1,2}\d{1,2}\s\d{2}:\d{2}:\d{2})\s([a-zA-Z0-9][a-zA-Z0-9._-]*)\s+[a-zA-Z0-9._-]+(?:\[\d+\])?\s*:`),
 			Category: "HOST",
 			Group:    1,
 			Enabled:  false,
 		},
 
 		// passwd username — structure-anchored (Group 1 = username). Anchored
-		// on the rigid passwd/shadow line shape: name at line start followed
-		// by the x/uid/gid numeric fields. The GECOS comment field and home
-		// path survive; only the account name is tokenized.
+		// on the rigid passwd/shadow line shape: name at line start, a
+		// passwd-field value that only real account files use (x, !/!!, *,
+		// a $…-hash, or empty for passwordless accounts), two numeric fields
+		// (uid/gid or lastchg/min), and a trailing colon opening the next
+		// field. Prose like "video:1920:1080:60" or "settings:default:100:200"
+		// has a numeric or wordy second field and no trailing colon, so it
+		// cannot match. The GECOS comment field and home path survive; only
+		// the account name is tokenized.
 		{
 			Name:     "passwd_username",
-			Regex:    regexp.MustCompile(`(?m)^([a-z_][a-z0-9_-]{0,31})[:!]\$?[a-zA-Z0-9!$%./]{1,128}(?::\d{1,10}){2}`),
+			Regex:    regexp.MustCompile(`(?m)^([a-z_][a-z0-9_-]{0,31})[:!](?:x|!+|\*+|\$[^:]*)?(?::\d{1,10}){2}:`),
 			Category: "USER",
 			Group:    1,
 			Enabled:  false,

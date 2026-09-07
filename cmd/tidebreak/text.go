@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -42,6 +43,14 @@ func cmdText(args []string) {
 	// unnoticed).
 	if *file != "" && len(positionals) > 0 {
 		fmt.Fprintln(os.Stderr, "Error: --file and text arguments are mutually exclusive; pass one or the other.")
+		os.Exit(1)
+	}
+
+	// --out must differ from --file: writing the redacted output over the
+	// input silently destroys the original. Tolerates relative paths and
+	// symlinks pointing at the input.
+	if *file != "" && *out != "" && samePath(*file, *out) {
+		fmt.Fprintln(os.Stderr, "Error: --out must be a different file than --file (the original would be overwritten).")
 		os.Exit(1)
 	}
 
@@ -133,13 +142,45 @@ func ensureTrailingNewline(s string) string {
 // Unix convention (no silent directory creation from a typo'd path).
 // Files are written 0600: output of a redaction tool may still contain
 // context the user considers private, and umask-based 0644 would leave it
-// world-readable.
+// world-readable. The mode is forced explicitly after the write because the
+// O_CREATE mode only applies to newly created files — a pre-existing 0644
+// file would otherwise keep its permissions.
 func writeTextOutput(s string, outPath string) error {
 	if outPath == "" {
 		_, err := os.Stdout.WriteString(ensureTrailingNewline(s))
 		return err
 	}
-	return os.WriteFile(outPath, []byte(s), 0600)
+	f, err := os.OpenFile(outPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	if err != nil {
+		return err
+	}
+	if _, err := f.WriteString(s); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return os.Chmod(outPath, 0600)
+}
+
+// samePath reports whether two paths refer to the same file, tolerating
+// relative paths and symlinks on the final element.
+func samePath(a, b string) bool {
+	abs := func(p string) string {
+		ap, err := filepath.Abs(p)
+		if err != nil {
+			return p
+		}
+		return ap
+	}
+	ra, rb := abs(a), abs(b)
+	if ra == rb {
+		return true
+	}
+	ia, erra := os.Stat(ra)
+	ib, errb := os.Stat(rb)
+	return erra == nil && errb == nil && os.SameFile(ia, ib)
 }
 
 // printTextSummary prints a compact "what was redacted" listing to w.
