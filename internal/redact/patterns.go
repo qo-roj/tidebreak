@@ -7,7 +7,11 @@ import "regexp"
 //
 // Order matters: more specific patterns (API keys, private keys, JWTs) run
 // before less specific ones (phone, credit card) to prevent greedy matches
-// from consuming substrings of longer token formats.
+// from consuming substrings of longer token formats. Within the IP family,
+// ipv4_private runs before ipv4 so the private-range toggle is meaningful —
+// when both are enabled, RFC1918 addresses are attributed to ipv4_private
+// and public ones to ipv4 (disabling ipv4_private alone never stops private
+// addresses from being redacted while ipv4 is on; fail-safe direction).
 func DefaultPatterns() []*Pattern {
 	return []*Pattern{
 		// Private keys (PEM blocks) — most specific, must run before credit card etc.
@@ -145,10 +149,14 @@ func DefaultPatterns() []*Pattern {
 			Enabled:  true,
 		},
 
-		// Phone — requires + prefix or 10+ digits to reduce false positives
+		// Phone — international form (+ prefix) and NANP form (3-3-4 with
+		// optional separators). Bare 10-digit strings are deliberately
+		// covered: for a redaction tool a missed number is worse than a
+		// flagged order-ID. Word boundaries keep it from matching inside
+		// longer digit runs; IPs/dates/SSNs don't fit the 3-3-4 shape.
 		{
 			Name:     "phone",
-			Regex:    regexp.MustCompile(`\+\d{1,3}[\s.\-]?\(?\d{1,4}\)?[\s.\-]?\d{3,5}[\s.\-]?\d{3,5}`),
+			Regex:    regexp.MustCompile(`(?:\+\d{1,3}[\s.\-]?\(?\d{1,4}\)?[\s.\-]?\d{3,5}[\s.\-]?\d{3,5}|\(?\b\d{3}\)?[\s.\-]?\d{3}[\s.\-]?\d{4}\b)`),
 			Category: "PHONE",
 			Enabled:  true,
 		},
@@ -238,9 +246,9 @@ func ExtendedPatterns() []*Pattern {
 var patternNames = []string{
 	"private_key", "jwt", "api_key_github", "api_key_openai", "api_key_anthropic",
 	"api_key_aws", "api_key_aws_secret", "api_key_google", "api_key_stripe",
-	"api_key_slack", "api_key_gitlab", "bearer_token", "email", "ipv4", "ipv6",
-	"mac_address", "database_connection", "credit_card", "ssn_us", "phone",
-	"ipv4_private", "hostname_internal", "iban", "passport", "high_entropy_secret",
+	"api_key_slack", "api_key_gitlab", "bearer_token", "email", "ipv4_private",
+	"ipv4", "ipv6", "mac_address", "database_connection", "credit_card", "ssn_us",
+	"phone", "hostname_internal", "iban", "passport", "high_entropy_secret",
 	"syslog_hostname", "passwd_username",
 }
 

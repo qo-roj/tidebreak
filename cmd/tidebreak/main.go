@@ -330,8 +330,13 @@ func cmdDryRun(args []string) {
 	var err error
 	if *file != "" {
 		data, err = os.ReadFile(*file)
-	} else {
+	} else if stdinIsPiped() {
 		data, err = io.ReadAll(os.Stdin)
+	} else {
+		// No file and no piped input: refuse instead of blocking on the
+		// terminal, matching `text` behavior.
+		fmt.Fprintln(os.Stderr, "Usage: tidebreak dry-run --file <path> | (piped stdin)\nShows what redaction would do to a file or piped text, without sending anything anywhere.")
+		os.Exit(1)
 	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error reading input: %v\n", err)

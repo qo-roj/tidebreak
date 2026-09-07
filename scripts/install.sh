@@ -29,9 +29,9 @@ NO_PATH_EDIT=false
 # Parse args
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --local)    LOCAL_BINARY="$2"; shift 2 ;;
+        --local)    [[ $# -ge 2 ]] || { echo "Missing value for --local"; exit 1; }; LOCAL_BINARY="$2"; shift 2 ;;
         --build)   DO_BUILD=true; shift ;;
-        --version) VERSION="$2"; shift 2 ;;
+        --version) [[ $# -ge 2 ]] || { echo "Missing value for --version"; exit 1; }; VERSION="$2"; shift 2 ;;
         --user)    INSTALL_SCOPE="user"; shift ;;
         --system)  INSTALL_SCOPE="system"; shift ;;
         --no-path-edit) NO_PATH_EDIT=true; shift ;;

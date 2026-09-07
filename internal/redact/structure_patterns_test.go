@@ -209,3 +209,63 @@ func TestGroupSpanMissingGroup(t *testing.T) {
 		t.Errorf("unexpected summary: %v", s)
 	}
 }
+
+// Phone covers international form (+ prefix) and the bare NANP form — a
+// plain "555-123-4567" previously passed through despite the "or 10+ digits"
+// comment. Bare 10-digit strings are covered deliberately: for a redaction
+// tool a missed number is worse than a flagged order-ID. \b keeps it from
+// matching inside longer digit runs.
+func TestPhoneCoversNANPForm(t *testing.T) {
+	r := newTestRedactor("phone")
+	cases := []string{
+		"call 555-123-4567 now",
+		"call 5551234567 now",
+		"call (555) 123-4567 now",
+		"call +1 (555) 123-4567 now",
+		"call +49 170 1234567 now",
+	}
+	for _, c := range cases {
+		r := newTestRedactor("phone") // fresh: each case expects PHONE:1
+		out, s := r.Redact(c)
+		if !strings.Contains(out, "[TB:PHONE:1]") {
+			t.Errorf("phone not redacted: %q → %q", c, out)
+		}
+		if s["phone"] != 1 {
+			t.Errorf("summary = %v, want phone: 1 for %q", s, c)
+		}
+	}
+	// Not phones: longer digit runs, dates, IPs — must not match the 3-3-4
+	// shape. A bare 10-digit string is indistinguishable from a NANP
+	// number, so order IDs DO match — accepted over-redaction (fail-safe
+	// direction; tokens restore in responses).
+	for _, c := range []string{
+		"order 12345678901 done",
+		"on 2026-09-07 at 12:30",
+		"ip 10.1.2.3 end",
+	} {
+		out, s := r.Redact(c)
+		if out != c || len(s) != 0 {
+			t.Errorf("false positive: %q → %q (%v)", c, out, s)
+		}
+	}
+	if out, _ := r.Redact("order 1234567890 done"); !strings.Contains(out, "[TB:PHONE:1]") {
+		t.Errorf("bare 10-digit should match NANP shape (documented trade-off): %q", out)
+	}
+}
+
+// ipv4_private must run before ipv4 (evaluation order in patternNames) so the
+// private-range toggle is meaningful: with both enabled, RFC1918 addresses
+// are attributed to ipv4_private; public ones to ipv4.
+func TestIPv4PrivateOrdering(t *testing.T) {
+	r := newTestRedactor("ipv4_private", "ipv4")
+	out, s := r.Redact("10.1.2.3 and 172.20.1.5 and 8.8.8.8")
+	if !strings.Contains(out, "[TB:IP:") {
+		t.Errorf("addresses not redacted: %q", out)
+	}
+	if s["ipv4_private"] != 2 {
+		t.Errorf("ipv4_private = %d, want 2 (10.x and 172.16-31.x)", s["ipv4_private"])
+	}
+	if s["ipv4"] != 1 {
+		t.Errorf("ipv4 = %d, want 1 (public 8.8.8.8)", s["ipv4"])
+	}
+}

@@ -89,26 +89,41 @@ apply to command output — they only apply to file content.
 Redaction patterns are regex-based. Each pattern has:
 - A name (for config and audit log)
 - A regex that matches sensitive data
-- A replacement template (usually `[NAME_REDACTED_N]`)
+- A replacement token in the form `[TB:CATEGORY:N]` (e.g. `[TB:IP:1]`, `[TB:EMAIL:2]`) — one token per distinct value, restored in responses
 
 Built-in patterns:
 
 | Name | Matches | Example | Replaced With |
 |---|---|---|---|
-| `ipv4` | IPv4 addresses | `203.0.113.42` | `[IP_REDACTED_1]` |
-| `ipv6` | IPv6 addresses | `2001:db8::1` | `[IP_REDACTED_1]` |
-| `email` | Email addresses | `user@example.com` | `[EMAIL_REDACTED_1]` |
-| `phone` | Phone numbers | `+49 170 1234567` | `[PHONE_REDACTED_1]` |
-| `api_key_github` | GitHub tokens | `ghp_xxxx...` | `[TOKEN_REDACTED_1]` |
-| `api_key_openai` | OpenAI keys | `sk-proj-xxxx...` | `[TOKEN_REDACTED_1]` |
-| `api_key_anthropic` | Anthropic keys | `sk-ant-xxxx...` | `[TOKEN_REDACTED_1]` |
-| `api_key_aws` | AWS keys | `AKIAxxxx...` | `[TOKEN_REDACTED_1]` |
-| `jwt` | JWT tokens | `eyJxxxx...` | `[JWT_REDACTED_1]` |
-| `private_key` | PEM private keys | `-----BEGIN ... PRIVATE KEY-----` | `[KEY_BLOCKED]` |
-| `mac_address` | MAC addresses | `00:1B:44:11:3A:B7` | `[MAC_REDACTED_1]` |
-| `credit_card` | Credit card numbers | `4111 1111 1111 1111` | `[CC_REDACTED_1]` |
-| `syslog_hostname` | Hostnames in syslog-style timestamped lines (structure-anchored: timestamp stays, hostname tokenized) | `Sep  3 17:54:01 web01 …` | `Sep  3 17:54:01 [HOST_REDACTED_1] …` |
-| `passwd_username` | Account names in passwd/shadow-style lines (structure-anchored: field layout stays, name tokenized) | `alice:x:1000:1000:…` | `[USER_REDACTED_1]:x:1000:1000:…` |
+| `ipv4` | Public IPv4 addresses (RFC1918 ranges go to `ipv4_private` when enabled) | `203.0.113.42` | `[TB:IP:1]` |
+| `ipv4_private` | Private IPv4 ranges (opt-in: server/paranoid presets) | `10.1.2.3` | `[TB:IP:1]` |
+| `ipv6` | Full-form IPv6 addresses | `2001:0db8:85a3:0000:0000:8a2e:0370:7334` | `[TB:IP:1]` |
+| `email` | Email addresses | `user@example.com` | `[TB:EMAIL:1]` |
+| `phone` | Phone numbers (international and NANP) | `+49 170 1234567`, `555-123-4567` | `[TB:PHONE:1]` |
+| `api_key_github` | GitHub tokens (`ghp_…`, `gho_…`, `ghs_…`, `ghu_…`, `ghr_…`, `github_pat_…`) | `ghp_xxxx...` | `[TB:TOKEN:1]` |
+| `api_key_openai` | OpenAI keys | `sk-proj-xxxx...` | `[TB:TOKEN:1]` |
+| `api_key_anthropic` | Anthropic keys | `sk-ant-xxxx...` | `[TB:TOKEN:1]` |
+| `api_key_aws` | AWS access keys | `AKIAxxxx...` | `[TB:TOKEN:1]` |
+| `api_key_aws_secret` | AWS secret keys (`aws_secret_access_key = …`) | `aws_secret_access_key = xxxx...` | `[TB:TOKEN:1]` |
+| `api_key_google` | Google API keys | `AIza...` | `[TB:TOKEN:1]` |
+| `api_key_stripe` | Stripe keys | `sk_live_xxxx...` | `[TB:TOKEN:1]` |
+| `api_key_slack` | Slack tokens | `xoxb-xxxx...` | `[TB:TOKEN:1]` |
+| `api_key_gitlab` | GitLab tokens | `glpat-xxxx...` | `[TB:TOKEN:1]` |
+| `bearer_token` | Bearer tokens | `Bearer xxxx...` | `[TB:TOKEN:1]` |
+| `jwt` | JWT tokens | `eyJxxxx...` | `[TB:JWT:1]` |
+| `private_key` | PEM private keys (RSA/EC/DSA/OPENSSH/PGP blocks) | `-----BEGIN ... PRIVATE KEY-----` | `[TB:KEY:1]` |
+| `mac_address` | MAC addresses | `00:1B:44:11:3A:B7` | `[TB:MAC:1]` |
+| `database_connection` | Database URLs (postgres/mysql/mongodb/redis://) | `postgres://user:***@host/db` | `[TB:DBURL:1]` |
+| `credit_card` | 13–16 digit card numbers (with separators) | `4111 1111 1111 1111` | `[TB:CC:1]` |
+| `ssn_us` | US SSNs | `123-45-6789` | `[TB:SSN:1]` |
+| `hostname_internal` | Internal hostnames (opt-in: server/paranoid presets) | `machine.internal` | `[TB:HOST:1]` |
+| `iban` | IBANs (opt-in: paranoid, training-data presets) | `NL91ABNA0417162300` | `[TB:IBAN:1]` |
+| `passport` | Passport numbers (opt-in: paranoid, training-data presets) | `K12345678` | `[TB:PASSPORT:1]` |
+| `high_entropy_secret` | 36+ char alphanumeric strings (opt-in: training-data preset; matches UUIDs too — deliberate fail-safe) | `zZ9Y8X7W6V5U4T3S2R1Q0P9O8N7M6L5K4J3I2H1` | `[TB:SECRET:1]` |
+| `syslog_hostname` | Hostnames in syslog-style timestamped lines with process tag (structure-anchored: timestamp and process stay, hostname tokenized) | `Sep  3 17:54:01 web01 sshd[1]: …` | `Sep  3 17:54:01 [TB:HOST:1] sshd[1]: …` |
+| `passwd_username` | Account names in passwd/shadow-style lines (structure-anchored: field layout stays, name tokenized) | `alice:x:1000:1000:…` | `[TB:USER:1]:x:1000:1000:…` |
+
+Pattern toggles live in `[redaction.patterns]` (e.g. `syslog_hostname = false`); defaults are set in `rules/defaults.conf`. Extended patterns (private IPs, internal hostnames, IBAN, passport, high-entropy secrets) are opt-in per preset.
 
 ### Custom Patterns
 
