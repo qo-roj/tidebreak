@@ -15,7 +15,7 @@ import (
 //   - "TG:IP:1"      (quotes stripped)
 //   - `TG:IP:1`      (backticks stripped)
 //   - TG:IP:1        (brackets stripped)
-//   - TB_IP_1        (underscores substituted)
+//   - TG_IP_1        (underscores substituted)
 type TokenMatcher struct {
 	mappings map[string]string // exact: "[TG:IP:1]" → "203.0.113.42"
 	fuzzy    []fuzzyPattern
@@ -54,8 +54,8 @@ func NewTokenMatcher(r *Redactor) *TokenMatcher {
 	// Build fuzzy patterns for each category present in the mapping
 	for cat := range categories {
 		tm.fuzzy = append(tm.fuzzy, fuzzyPattern{
-			// Match: "TG:CAT:N", `TG:CAT:N`, TG:CAT:N, TB_CAT_N
-			regex:        regexp.MustCompile(`["'` + "`" + `]?TB[:_]` + cat + `[:_](\d+)["'` + "`" + `]?`),
+			// Match: "TG:CAT:N", `TG:CAT:N`, TG:CAT:N, TG_CAT_N
+			regex:        regexp.MustCompile(`["'` + "`" + `]?TG[:_]` + cat + `[:_](\d+)["'` + "`" + `]?`),
 			category:     cat,
 			captureGroup: 1,
 		})

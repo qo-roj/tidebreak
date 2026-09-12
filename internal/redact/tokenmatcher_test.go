@@ -34,7 +34,7 @@ func TestTokenMatcherFuzzyMatch(t *testing.T) {
 		`"TG:IP:1"`, // quotes
 		"`TG:IP:1`", // backticks
 		`TG:IP:1`,   // no brackets
-		`TB_IP_1`,   // underscores
+		`TG_IP_1`,   // underscores
 	}
 
 	for _, fuzzy := range tests {

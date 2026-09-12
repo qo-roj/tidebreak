@@ -19,7 +19,7 @@ type StreamRedactor struct {
 	maxBuffer int
 }
 
-// partialTokenStart matches a potential partial TB token at the end of a string.
+// partialTokenStart matches a potential partial TG token at the end of a string.
 // Only matches [TG: prefixed partial tokens, not arbitrary opening brackets.
 var partialTokenStart = regexp.MustCompile(`\[TG:[A-Z]*:?[0-9]*$`)
 

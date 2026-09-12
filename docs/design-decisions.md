@@ -190,7 +190,7 @@ type FuzzyPattern struct {
 "TG:IP:1"     → 203.0.113.42    (quotes stripped)
 TG:IP:1       → 203.0.113.42    (brackets stripped)
 `TG:IP:1`     → 203.0.113.42    (backticks stripped)
-TB_IP_1       → 203.0.113.42    (underscores substituted)
+TG_IP_1       → 203.0.113.42    (underscores substituted)
 ```
 
 ### Scoped Mappings
