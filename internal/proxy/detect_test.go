@@ -79,7 +79,7 @@ func TestDetectAgent(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			req := httptest.NewRequest("POST", "/openai/v1/chat/completions", nil)
 			if tt.customHdr != "" {
-				req.Header.Set("X-Tidebreak-Agent", tt.customHdr)
+				req.Header.Set("X-Tidegate-Agent", tt.customHdr)
 			}
 			if tt.userAgent != "" {
 				req.Header.Set("User-Agent", tt.userAgent)
@@ -100,12 +100,12 @@ func TestDetectAgent(t *testing.T) {
 }
 
 func TestDetectAgentPriority(t *testing.T) {
-	// Verify that X-Tidebreak-Agent takes priority over User-Agent
+	// Verify that X-Tidegate-Agent takes priority over User-Agent
 	req := httptest.NewRequest("POST", "/openai/v1/chat/completions", nil)
-	req.Header.Set("X-Tidebreak-Agent", "custom-agent")
+	req.Header.Set("X-Tidegate-Agent", "custom-agent")
 	req.Header.Set("User-Agent", "claude-code/1.0")
 
-	agent := req.Header.Get("X-Tidebreak-Agent")
+	agent := req.Header.Get("X-Tidegate-Agent")
 	if agent == "" {
 		agent = detectAgent(req)
 	}

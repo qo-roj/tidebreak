@@ -1,4 +1,4 @@
-# Tidebreak — Design Decisions
+# Tidegate — Design Decisions
 
 Resolving the 9 issues raised in the architecture review.
 
@@ -21,7 +21,7 @@ single request spans multiple tiers.
 
 Classification operates on **content blocks**, not whole requests. LLM API requests
 are structured — they contain messages, and messages contain content blocks (text,
-tool results, file contents). Tidebreak parses the API request structure and
+tool results, file contents). Tidegate parses the API request structure and
 classifies each content block independently.
 
 ```
@@ -53,13 +53,13 @@ reference goes entirely to Ollama rather than trying to split it mid-block.
 
 ### The Split: When to Fragment vs Escalate
 
-Tidebreak fragments at **natural boundaries** (message boundaries, tool-result
+Tidegate fragments at **natural boundaries** (message boundaries, tool-result
 boundaries, file-content boundaries) and escalates within fragments:
 
 ```
 Message [1] content: "Here's my nginx config:\n<file content with secrets>"
 
-Tidebreak detects this is a tool result containing a file read.
+Tidegate detects this is a tool result containing a file read.
 → The file content is extracted as a sub-block
 → Sub-block classified: contains private IP + letsencrypt path → LOCAL-ONLY
 → Sub-block sent to Ollama for summarization
@@ -69,7 +69,7 @@ Tidebreak detects this is a tool result containing a file read.
 ```
 
 The key insight: agents structure their requests. They don't send arbitrary blobs —
-they send messages with tool results, file reads, and reasoning. Tidebreak parses
+they send messages with tool results, file reads, and reasoning. Tidegate parses
 that structure and classifies at the boundary that makes sense.
 
 ---
@@ -84,10 +84,10 @@ purpose of streaming and add latency).
 
 ### Decision: Stream-Through with Reverse-Mapping Filter
 
-Tidebreak does NOT redact outbound streaming responses — the cloud model's
+Tidegate does NOT redact outbound streaming responses — the cloud model's
 response tokens are not sensitive (they're generated text, not user data). The
 streaming concern is **reverse-mapping**: if the cloud model mentions
-`[IP_REDACTED_1]` in a streaming response, Tidebreak must replace it with the
+`[IP_REDACTED_1]` in a streaming response, Tidegate must replace it with the
 real IP in real-time.
 
 ```
@@ -97,7 +97,7 @@ Cloud SSE stream:
   data: {"content": " is a known threat"}
   data: [DONE]
 
-Tidebreak reverse-mapping filter (streaming):
+Tidegate reverse-mapping filter (streaming):
   data: {"content": "Check if "}
   data: {"content": "203.0.113.42"}        ← token replaced
   data: {"content": " is a known threat"}
@@ -106,9 +106,9 @@ Tidebreak reverse-mapping filter (streaming):
 
 ### Implementation: Token Boundary Buffer
 
-Tokens like `[IP_REDACTED_1]` can be split across SSE chunks. Tidebreak maintains
+Tokens like `[IP_REDACTED_1]` can be split across SSE chunks. Tidegate maintains
 a small **token boundary buffer** (max 64 bytes) that holds the tail of each chunk.
-If the buffer contains a partial token prefix (e.g. `[IP_REDACT`), Tidebreak waits
+If the buffer contains a partial token prefix (e.g. `[IP_REDACT`), Tidegate waits
 for the next chunk before flushing. If the next chunk completes the token, it's
 replaced. If it doesn't match, the buffer is flushed as-is.
 
@@ -136,7 +136,7 @@ func (sr *StreamRedactor) ProcessChunk(chunk []byte) []byte {
 Inbound requests are NOT streamed — agents send complete request bodies. The
 streaming is only on the response side. So inbound redaction remains batch-mode.
 
-If a future agent harness streams requests (unlikely but possible), Tidebreak
+If a future agent harness streams requests (unlikely but possible), Tidegate
 will buffer the inbound stream, redact, then forward as a batch. The latency cost
 is acceptable because request redaction is the critical security path.
 
@@ -160,20 +160,20 @@ but fails when:
 Tokens use a distinctive, unlikely-to-collide format:
 
 ```
-[TB:IP:1]        → IP address #1
-[TB:EMAIL:3]     → Email address #3
-[TB:TOKEN:1]    → API token #1
-[TB:KEY:1]      → Private key #1
+[TG:IP:1]        → IP address #1
+[TG:EMAIL:3]     → Email address #3
+[TG:TOKEN:1]    → API token #1
+[TG:KEY:1]      → Private key #1
 ```
 
-The `TB:` prefix makes collisions with natural text extremely unlikely. The
+The `TG:` prefix makes collisions with natural text extremely unlikely. The
 category prefix enables targeted reverse-mapping.
 
 ### Matching Strategy
 
 ```go
 type TokenMatcher struct {
-    mappings map[string]string  // exact: "TB:IP:1" → "203.0.113.42"
+    mappings map[string]string  // exact: "TG:IP:1" → "203.0.113.42"
     fuzzy    []FuzzyPattern     // patterns for reformatted tokens
 }
 
@@ -184,12 +184,12 @@ type FuzzyPattern struct {
 }
 
 // Exact match (primary)
-[TB:IP:1] → 203.0.113.42
+[TG:IP:1] → 203.0.113.42
 
 // Fuzzy matches (fallback)
-"TB:IP:1"     → 203.0.113.42    (quotes stripped)
-TB:IP:1       → 203.0.113.42    (brackets stripped)
-`TB:IP:1`     → 203.0.113.42    (backticks stripped)
+"TG:IP:1"     → 203.0.113.42    (quotes stripped)
+TG:IP:1       → 203.0.113.42    (brackets stripped)
+`TG:IP:1`     → 203.0.113.42    (backticks stripped)
 TB_IP_1       → 203.0.113.42    (underscores substituted)
 ```
 
@@ -197,7 +197,7 @@ TB_IP_1       → 203.0.113.42    (underscores substituted)
 
 Each request gets its own mapping scope. Mappings are NOT shared across requests
 (even from the same agent). This prevents token collisions if two requests both
-redact different IPs as `[TB:IP:1]`.
+redact different IPs as `[TG:IP:1]`.
 
 ```go
 type RequestScope struct {
@@ -211,15 +211,15 @@ type RequestScope struct {
 
 ### Failure Mode: Unresolved Token
 
-If the cloud model returns a token that Tidebreak can't reverse-map (corrupted,
-hallucinated, or from a different request), Tidebreak:
+If the cloud model returns a token that Tidegate can't reverse-map (corrupted,
+hallucinated, or from a different request), Tidegate:
 1. Logs it in the audit log as `unresolved_token`
-2. Leaves the token as-is in the response (the agent sees `[TB:IP:1]`)
-3. The agent can ask "what is [TB:IP:1]?" and Tidebreak will NOT resolve it — the
+2. Leaves the token as-is in the response (the agent sees `[TG:IP:1]`)
+3. The agent can ask "what is [TG:IP:1]?" and Tidegate will NOT resolve it — the
    mapping is gone
 
 This is intentional — it's better for the agent to see an opaque token than for
-Tidebreak to guess wrong and inject incorrect data.
+Tidegate to guess wrong and inject incorrect data.
 
 ---
 
@@ -250,7 +250,7 @@ Local-only content (raw)
   ▼
 [2] Pattern redaction (same regex patterns as the main redactor)
   │   Scan Ollama's output for any remaining PII patterns
-  │   Replace with [TB:*] tokens
+  │   Replace with [TG:*] tokens
   │
   ▼
 [3] Forward to cloud model
@@ -306,7 +306,7 @@ An agent (or a malicious prompt injection) could bypass redaction by:
 
 ### Decision: Layered Defense + Bounded Scope
 
-Tidebreak is **defense in depth, not a complete solution**. We acknowledge bypass
+Tidegate is **defense in depth, not a complete solution**. We acknowledge bypass
 is possible and focus on making the common case safe, not the adversarial case
 impossible.
 
@@ -335,8 +335,8 @@ type EncodingDetector struct {
 // (don't send decoded content to cloud — just flag the encoded form as redacted)
 ```
 
-If `MjAzLjAuMTEzLjQy` decodes to an IP, Tidebreak replaces the entire base64
-string with `[TB:IP:1]` — the cloud never sees either the encoded or decoded form.
+If `MjAzLjAuMTEzLjQy` decodes to an IP, Tidegate replaces the entire base64
+string with `[TG:IP:1]` — the cloud never sees either the encoded or decoded form.
 
 ### Layer 3: Contextual Redaction (v0.3)
 
@@ -384,7 +384,7 @@ commands, not file paths. The path-based rule engine can't match these.
 ### Decision: Separate Command-Output Rule Section
 
 Introduce a `[cmd]` section in the rules config that matches command patterns
-instead of file paths. When an agent executes a command (via tool use), Tidebreak
+instead of file paths. When an agent executes a command (via tool use), Tidegate
 matches the command against `[cmd]` rules and classifies the output.
 
 ```ini
@@ -417,7 +417,7 @@ cat ~/.ssh/id_*           = block
 ### How It Works
 
 Agents communicate with LLMs via tool-use. When an agent runs `journalctl -u nginx`,
-the tool result contains the command and its output. Tidebreak:
+the tool result contains the command and its output. Tidegate:
 
 1. Detects a tool-use result containing a shell command
 2. Matches the command against `[cmd]` rules
@@ -471,18 +471,18 @@ instead of mixing them into `[redact]` / `[local-only]` path sections.
 
 ### Problem
 
-Tidebreak needs to know which agent is making the request (for per-agent rules and
+Tidegate needs to know which agent is making the request (for per-agent rules and
 audit logging), but the `ANTHROPIC_BASE_URL` env var doesn't carry agent identity.
 
 ### Decision: Agent Identification via Header + Auto-Config
 
 ### Method 1: Custom Header (Primary)
 
-When Tidebreak auto-configures an agent (`tidebreak install --agent claude-code`),
+When Tidegate auto-configures an agent (`tidegate install --agent claude-code`),
 it sets a custom header via the agent's config or a wrapper script:
 
 ```
-X-Tidebreak-Agent: claude-code
+X-Tidegate-Agent: claude-code
 ```
 
 For agents that support custom headers (Claude Code, OpenCode, Hermes):
@@ -490,7 +490,7 @@ For agents that support custom headers (Claude Code, OpenCode, Hermes):
 # Claude Code — in ~/.claude/config.json
 {
   "extra_headers": {
-    "X-Tidebreak-Agent": "claude-code"
+    "X-Tidegate-Agent": "claude-code"
   }
 }
 
@@ -498,13 +498,13 @@ For agents that support custom headers (Claude Code, OpenCode, Hermes):
 providers:
   anthropic:
     headers:
-      X-Tidebreak-Agent: hermes
+      X-Tidegate-Agent: hermes
 ```
 
 ### Method 2: API Key Fingerprint (Fallback)
 
-If an agent doesn't support custom headers, Tidebreak identifies the agent by
-its API key fingerprint. During `tidebreak install`, Tidebreak registers the
+If an agent doesn't support custom headers, Tidegate identifies the agent by
+its API key fingerprint. During `tidegate install`, Tidegate registers the
 agent's API key (SHA-256 hash, not the key itself) with an agent name:
 
 ```sql
@@ -515,13 +515,13 @@ CREATE TABLE agent_keys (
 );
 ```
 
-When a request arrives without the `X-Tidebreak-Agent` header, Tidebreak hashes
+When a request arrives without the `X-Tidegate-Agent` header, Tidegate hashes
 the API key in the request and looks up the agent name.
 
 ### Method 3: Port-Based Identification (Last Resort)
 
 For agents that support neither custom headers nor expose their API key:
-Tidebreak can listen on multiple ports, one per agent:
+Tidegate can listen on multiple ports, one per agent:
 
 ```
 localhost:8842  — default (unknown agent, most restrictive rules)
@@ -532,7 +532,7 @@ localhost:8845  — hermes
 
 Each port maps to a known agent with specific rules. Configured via:
 ```bash
-tidebreak install --agent claude-code --port 8843
+tidegate install --agent claude-code --port 8843
 ```
 
 ### Audit Log
@@ -561,10 +561,10 @@ connection and the upstream cloud connection needs to be explicit.
 
 ### Decision: Plain HTTP Locally, TLS Upstream
 
-Tidebreak uses a **split TLS model**:
+Tidegate uses a **split TLS model**:
 
 ```
-Agent ──── HTTP (plaintext) ──→ Tidebreak ──── HTTPS (TLS) ──→ Cloud API
+Agent ──── HTTP (plaintext) ──→ Tidegate ──── HTTPS (TLS) ──→ Cloud API
          localhost:8842                    api.anthropic.com
          (no TLS needed)                    (TLS terminated by cloud)
 ```
@@ -578,9 +578,9 @@ Agent ──── HTTP (plaintext) ──→ Tidebreak ──── HTTPS (TLS)
 
 ### Why TLS Upstream?
 
-- The connection from Tidebreak to the cloud API must use TLS (the cloud provider requires it)
-- Tidebreak terminates the local HTTP connection, then opens a new HTTPS connection to the cloud
-- The cloud provider's TLS certificate is verified normally — Tidebreak doesn't intercept it
+- The connection from Tidegate to the cloud API must use TLS (the cloud provider requires it)
+- Tidegate terminates the local HTTP connection, then opens a new HTTPS connection to the cloud
+- The cloud provider's TLS certificate is verified normally — Tidegate doesn't intercept it
 
 ### Implementation
 
@@ -608,11 +608,11 @@ multi-user servers, containers with host networking):
 ```ini
 [gateway]
 tls = true
-tls_cert = ~/.config/tidebreak/cert.pem
-tls_key  = ~/.config/tidebreak/key.pem
+tls_cert = ~/.config/tidegate/cert.pem
+tls_key  = ~/.config/tidegate/key.pem
 ```
 
-Tidebreak generates a self-signed cert during `tidebreak setup --tls` and
+Tidegate generates a self-signed cert during `tidegate setup --tls` and
 installs it in the system trust store. Agents connect via
 `https://localhost:8842`. This is opt-in and not the default.
 
@@ -621,15 +621,15 @@ installs it in the system trust store. Agents connect via
 Two modes:
 
 1. **Base URL override** (default): agents connect to `http://localhost:8842/anthropic`
-   directly. Tidebreak routes based on path prefix.
+   directly. Tidegate routes based on path prefix.
 
 2. **HTTPS_PROXY mode** (fallback): agents connect to `api.anthropic.com` but the
-   `HTTPS_PROXY` env var redirects through Tidebreak. Tidebreak uses CONNECT
+   `HTTPS_PROXY` env var redirects through Tidegate. Tidegate uses CONNECT
    tunneling and intercepts the TLS stream. This is more complex and only used
    for agents that don't support base URL override.
 
 Mode 1 is the default. Mode 2 is documented but not recommended — it requires
-Tidebreak to generate a CA certificate and install it in the agent's trust store,
+Tidegate to generate a CA certificate and install it in the agent's trust store,
 which is fragile and platform-specific.
 
 ---
@@ -638,7 +638,7 @@ which is fragile and platform-specific.
 
 ### Problem
 
-The install script references `https://github.com/qo-roj/tidebreak/releases/...`
+The install script references `https://github.com/qo-roj/tidegate/releases/...`
 which didn't exist initially.
 
 ### Decision: Two-Phase Release Strategy
@@ -650,19 +650,19 @@ fleet-hosted mirror:
 
 ```bash
 # Install from local binary (development)
-./scripts/install.sh --local /path/to/tidebreak-binary
+./scripts/install.sh --local /path/to/tidegate-binary
 
 # Install from fleet mirror (private)
-curl -fsSL https://git.zitronenkuchen.tail5156c1.ts.net/tidebreak/install.sh | bash
+curl -fsSL https://git.zitronenkuchen.tail5156c1.ts.net/tidegate/install.sh | bash
 
 # Install from GitHub (public)
-curl -fsSL https://raw.githubusercontent.com/qo-roj/tidebreak/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/qo-roj/tidegate/main/scripts/install.sh | bash
 ```
 
 ### Phase 2: GitHub Release (When Ready)
 
 Once the Go code is written and the repo is public:
-1. Create `github.com/qo-roj/tidebreak` (done)
+1. Create `github.com/qo-roj/tidegate` (done)
 2. Set up GitHub Actions for cross-compilation (linux/amd64, linux/arm64, darwin/amd64, darwin/arm64)
 3. Tag releases, upload binaries as release assets
 4. Point install.sh at GitHub releases
@@ -670,25 +670,25 @@ Once the Go code is written and the repo is public:
 ### Updated install.sh
 
 The install script now:
-1. Tries local binary first (`--local` flag or `TIDEBREAK_BINARY` env var)
+1. Tries local binary first (`--local` flag or `TIDEGATE_BINARY` env var)
 2. Tries GitHub releases (once the repo exists)
 3. Falls back to building from source if Go is installed
 4. Prints a clear error if none work
 
 ```bash
 # In install.sh
-DOWNLOAD_BASE="${TIDEBREAK_MIRROR:-https://github.com/qo-roj/tidebreak/releases}"
+DOWNLOAD_BASE="${TIDEGATE_MIRROR:-https://github.com/qo-roj/tidegate/releases}"
 
-if [[ -n "${TIDEBREAK_BINARY:-}" ]]; then
+if [[ -n "${TIDEGATE_BINARY:-}" ]]; then
     # Local binary
-    cp "$TIDEBREAK_BINARY" "${INSTALL_DIR}/tidebreak"
-elif curl -fsSL "${DOWNLOAD_BASE}/download/${VERSION}/tidebreak-${PLATFORM}-${ARCH}" -o ...; then
+    cp "$TIDEGATE_BINARY" "${INSTALL_DIR}/tidegate"
+elif curl -fsSL "${DOWNLOAD_BASE}/download/${VERSION}/tidegate-${PLATFORM}-${ARCH}" -o ...; then
     # GitHub release
     :
 elif command -v go &>/dev/null; then
     # Build from source
-    git clone https://github.com/qo-roj/tidebreak /tmp/tidebreak-src
-    cd /tmp/tidebreak-src && go build -o "${INSTALL_DIR}/tidebreak" ./cmd/tidebreak
+    git clone https://github.com/qo-roj/tidegate /tmp/tidegate-src
+    cd /tmp/tidegate-src && go build -o "${INSTALL_DIR}/tidegate" ./cmd/tidegate
 else
     echo "No binary available and Go not installed. Install Go or download manually."
     exit 1
@@ -697,10 +697,10 @@ fi
 
 ### GitHub Repo Name
 
-The repo is at `github.com/qo-roj/tidebreak`. The install script uses an env var so the
+The repo is at `github.com/qo-roj/tidegate`. The install script uses an env var so the
 URL can be changed without code changes:
 
 ```bash
-TIDEBREAK_MIRROR=https://git.zitronenkuchen.tail5156c1.ts.net/tidebreak \
+TIDEGATE_MIRROR=https://git.zitronenkuchen.tail5156c1.ts.net/tidegate \
   bash install.sh
 ```

@@ -1,4 +1,4 @@
-// Package route implements the routing logic for the Tidebreak gateway.
+// Package route implements the routing logic for the Tidegate gateway.
 // It decides where content goes: cloud API (scrubbed), local Ollama (full data),
 // or blocked entirely. It coordinates the classifier, redactor, and Ollama client.
 package route
@@ -7,11 +7,11 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/qo-roj/tidebreak/internal/audit"
-	"github.com/qo-roj/tidebreak/internal/classify"
-	"github.com/qo-roj/tidebreak/internal/ollama"
-	"github.com/qo-roj/tidebreak/internal/redact"
-	"github.com/qo-roj/tidebreak/internal/rules"
+	"github.com/qo-roj/tidegate/internal/audit"
+	"github.com/qo-roj/tidegate/internal/classify"
+	"github.com/qo-roj/tidegate/internal/ollama"
+	"github.com/qo-roj/tidegate/internal/redact"
+	"github.com/qo-roj/tidegate/internal/rules"
 )
 
 // RequestContext holds per-request state (primarily the redactor mapping)
@@ -141,7 +141,7 @@ func (r *Router) ProcessRequest(body []byte, agent string, provider string) (ctx
 				})
 			}
 			// Replace content with block message
-			setMessageContent(m, "[Tidebreak: access denied — content blocked]")
+			setMessageContent(m, "[Tidegate: access denied — content blocked]")
 
 		case rules.TierLocalOnly:
 			// Send to Ollama for summarization
@@ -149,7 +149,7 @@ func (r *Router) ProcessRequest(body []byte, agent string, provider string) (ctx
 				summary, err := r.Ollama.Summarize(block.Content, r.enabledPatterns)
 				if err != nil {
 					// Ollama failed — block the content
-					setMessageContent(m, "[Tidebreak: local-only content could not be processed]")
+					setMessageContent(m, "[Tidegate: local-only content could not be processed]")
 					if r.AuditLog != nil {
 						r.AuditLog.Record(audit.Entry{
 							Agent:    agent,
@@ -175,7 +175,7 @@ func (r *Router) ProcessRequest(body []byte, agent string, provider string) (ctx
 				}
 			} else {
 				// No Ollama — block
-				setMessageContent(m, "[Tidebreak: local-only content blocked — Ollama not available]")
+				setMessageContent(m, "[Tidegate: local-only content blocked — Ollama not available]")
 				if r.AuditLog != nil {
 					r.AuditLog.Record(audit.Entry{
 						Agent:    agent,
@@ -233,7 +233,7 @@ func (r *Router) ProcessRequest(body []byte, agent string, provider string) (ctx
 }
 
 // ProcessResponse reverse-maps redaction tokens in the cloud model's response.
-// This lets the agent see real values in the response instead of [TB:IP:1] tokens.
+// This lets the agent see real values in the response instead of [TG:IP:1] tokens.
 // ctx carries the per-request redactor mapping from ProcessRequest.
 func (r *Router) ProcessResponse(ctx *RequestContext, body []byte) []byte {
 	if ctx == nil || ctx.Redactor == nil {

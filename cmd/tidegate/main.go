@@ -1,4 +1,4 @@
-// Package main is the Tidebreak CLI entry point.
+// Package main is the Tidegate CLI entry point.
 package main
 
 import (
@@ -12,12 +12,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/qo-roj/tidebreak/internal/audit"
-	"github.com/qo-roj/tidebreak/internal/config"
-	"github.com/qo-roj/tidebreak/internal/ollama"
-	"github.com/qo-roj/tidebreak/internal/proxy"
-	"github.com/qo-roj/tidebreak/internal/route"
-	"github.com/qo-roj/tidebreak/internal/rules"
+	"github.com/qo-roj/tidegate/internal/audit"
+	"github.com/qo-roj/tidegate/internal/config"
+	"github.com/qo-roj/tidegate/internal/ollama"
+	"github.com/qo-roj/tidegate/internal/proxy"
+	"github.com/qo-roj/tidegate/internal/route"
+	"github.com/qo-roj/tidegate/internal/rules"
 )
 
 // Version is set at build time via -ldflags.
@@ -31,7 +31,7 @@ func main() {
 
 	switch os.Args[1] {
 	case "version":
-		fmt.Printf("tidebreak %s\n", Version)
+		fmt.Printf("tidegate %s\n", Version)
 	case "start":
 		cmdStart(os.Args[2:])
 	case "audit":
@@ -60,10 +60,10 @@ func main() {
 }
 
 func printUsage() {
-	fmt.Println(`tidebreak — redaction gateway for AI coding agents
+	fmt.Println(`tidegate — redaction gateway for AI coding agents
 
 Usage:
-  tidebreak <command> [flags]
+  tidegate <command> [flags]
 
 Commands:
   start          Start the gateway proxy
@@ -71,12 +71,12 @@ Commands:
   classify       Test how a file would be classified
   text           Redact text/file/stdin for safe pasting (clean output)
   config         Edit or view configuration
-  install        Configure an agent to use Tidebreak
+  install        Configure an agent to use Tidegate
   setup-ollama   Configure local Ollama model
   presets        List available presets
   version        Show version
 
-Run 'tidebreak <command> --help' for command-specific flags.`)
+Run 'tidegate <command> --help' for command-specific flags.`)
 }
 
 func cmdStart(args []string) {
@@ -91,7 +91,7 @@ func cmdStart(args []string) {
 		os.Exit(1)
 	}
 
-	fmt.Printf("🦞 Tidebreak %s starting...\n", Version)
+	fmt.Printf("🦞 Tidegate %s starting...\n", Version)
 	fmt.Printf("   Port: %d\n", cfg.Gateway.Port)
 	fmt.Printf("   Preset: %s\n", cfg.Gateway.Preset)
 	fmt.Printf("   Ollama: %s (%s)\n", cfg.Local.OllamaURL, cfg.Local.OllamaModel)
@@ -99,7 +99,7 @@ func cmdStart(args []string) {
 
 	// Initialize audit log
 	home, _ := os.UserHomeDir()
-	dataDir := filepath.Join(home, ".local", "share", "tidebreak")
+	dataDir := filepath.Join(home, ".local", "share", "tidegate")
 	os.MkdirAll(dataDir, 0755)
 	dbPath := filepath.Join(dataDir, "audit.db")
 	auditLog, err := audit.New(dbPath)
@@ -142,7 +142,7 @@ func cmdAudit(args []string) {
 	fs.Parse(args)
 
 	home, _ := os.UserHomeDir()
-	dbPath := home + "/.local/share/tidebreak/audit.db"
+	dbPath := home + "/.local/share/tidegate/audit.db"
 
 	log, err := audit.New(dbPath)
 	if err != nil {
@@ -257,7 +257,7 @@ func cmdClassify(args []string) {
 	fs.Parse(args)
 
 	if fs.NArg() == 0 {
-		fmt.Fprintln(os.Stderr, "Usage: tidebreak classify <path>")
+		fmt.Fprintln(os.Stderr, "Usage: tidegate classify <path>")
 		os.Exit(1)
 	}
 
@@ -276,20 +276,20 @@ func cmdClassify(args []string) {
 	if tier == rules.TierRedacted {
 		fmt.Println()
 		fmt.Println("Redaction patterns would be applied to this content.")
-		fmt.Println("Use 'tidebreak dry-run --file <path>' to see redacted output.")
+		fmt.Println("Use 'tidegate dry-run --file <path>' to see redacted output.")
 	}
 }
 
 func cmdConfig(args []string) {
 	if len(args) == 0 {
-		fmt.Println("Usage: tidebreak config [edit|show|set <key> <value>]")
+		fmt.Println("Usage: tidegate config [edit|show|set <key> <value>]")
 		return
 	}
 
 	switch args[0] {
 	case "edit":
 		home, _ := os.UserHomeDir()
-		path := home + "/.config/tidebreak/tidebreak.conf"
+		path := home + "/.config/tidegate/tidegate.conf"
 		editor := os.Getenv("EDITOR")
 		if editor == "" {
 			editor = "vi"
@@ -299,7 +299,7 @@ func cmdConfig(args []string) {
 		fmt.Println("(editor exec not yet implemented)")
 	case "show":
 		home, _ := os.UserHomeDir()
-		path := home + "/.config/tidebreak/tidebreak.conf"
+		path := home + "/.config/tidegate/tidegate.conf"
 		if _, err := os.Stat(path); err != nil {
 			fmt.Println("No config file found. Using defaults.")
 			return
@@ -308,7 +308,7 @@ func cmdConfig(args []string) {
 		fmt.Print(string(data))
 	case "set":
 		if len(args) < 3 {
-			fmt.Println("Usage: tidebreak config set <key> <value>")
+			fmt.Println("Usage: tidegate config set <key> <value>")
 			return
 		}
 		fmt.Printf("Setting %s = %s (not yet implemented)\n", args[1], args[2])
@@ -335,7 +335,7 @@ func cmdDryRun(args []string) {
 	} else {
 		// No file and no piped input: refuse instead of blocking on the
 		// terminal, matching `text` behavior.
-		fmt.Fprintln(os.Stderr, "Usage: tidebreak dry-run --file <path> | (piped stdin)\nShows what redaction would do to a file or piped text, without sending anything anywhere.")
+		fmt.Fprintln(os.Stderr, "Usage: tidegate dry-run --file <path> | (piped stdin)\nShows what redaction would do to a file or piped text, without sending anything anywhere.")
 		os.Exit(1)
 	}
 	if err != nil {
@@ -453,11 +453,11 @@ func cmdInstall(args []string) {
 		return
 	}
 
-	fmt.Println("Usage: tidebreak install --all | --agent <name>")
+	fmt.Println("Usage: tidegate install --all | --agent <name>")
 }
 
 func cmdSetupOllama() {
-	fmt.Println("🦞 Tidebreak — Ollama Setup")
+	fmt.Println("🦞 Tidegate — Ollama Setup")
 	fmt.Println("(not yet implemented — see scripts/ollama-setup.sh)")
 }
 

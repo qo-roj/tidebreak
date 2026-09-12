@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/qo-roj/tidebreak/internal/rules"
+	"github.com/qo-roj/tidegate/internal/rules"
 )
 
 // Pattern toggles from [redaction.patterns] must reach the per-request
@@ -97,12 +97,12 @@ passwd_username = true
 	red := r.newRedactor()
 
 	out, _ := red.Redact("Sep  3 17:54:01 himbeerkuchen systemd[1]: Started apt.\n")
-	if !strings.Contains(out, "Sep  3 17:54:01 [TB:HOST:1] systemd[1]") {
+	if !strings.Contains(out, "Sep  3 17:54:01 [TG:HOST:1] systemd[1]") {
 		t.Errorf("syslog_hostname toggle inactive: %q", out)
 	}
 
 	out, _ = red.Redact("sid:x:1000:1000:Sid:/home/sid:/usr/bin/fish\n")
-	if !strings.HasPrefix(out, "[TB:USER:1]:x:1000:1000:") {
+	if !strings.HasPrefix(out, "[TG:USER:1]:x:1000:1000:") {
 		t.Errorf("passwd_username toggle inactive: %q", out)
 	}
 }

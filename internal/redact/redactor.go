@@ -1,10 +1,10 @@
-// Package redact provides pattern-based content redaction for the Tidebreak
+// Package redact provides pattern-based content redaction for the Tidegate
 // gateway. It scans content for sensitive data (IPs, emails, API keys, etc.)
 // and replaces matches with opaque tokens, maintaining an in-memory mapping
 // for reverse restoration in responses.
 //
-// Token format: [TB:CATEGORY:N] (e.g. [TB:IP:1], [TB:EMAIL:3])
-// The TB: prefix makes collisions with natural text extremely unlikely.
+// Token format: [TG:CATEGORY:N] (e.g. [TG:IP:1], [TG:EMAIL:3])
+// The TG: prefix makes collisions with natural text extremely unlikely.
 package redact
 
 import (
@@ -200,7 +200,7 @@ func (r *Redactor) MappingCount() int {
 }
 
 // allocateToken creates a unique token for a matched value and stores the mapping.
-// Token format: [TB:CATEGORY:N] — e.g. [TB:IP:1], [TB:EMAIL:2]
+// Token format: [TG:CATEGORY:N] — e.g. [TG:IP:1], [TG:EMAIL:2]
 // Uses a reverse map for O(1) dedup instead of O(n) linear scan.
 func (r *Redactor) allocateToken(p *Pattern, original string) string {
 	// O(1) dedup check via reverse map
@@ -214,7 +214,7 @@ func (r *Redactor) allocateToken(p *Pattern, original string) string {
 	}
 	n := r.counters[category] + 1
 	r.counters[category] = n
-	token := fmt.Sprintf("[TB:%s:%d]", category, n)
+	token := fmt.Sprintf("[TG:%s:%d]", category, n)
 	r.mapping[token] = original
 	r.reverse[original] = token
 	return token

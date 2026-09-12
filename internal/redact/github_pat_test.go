@@ -7,7 +7,7 @@ import (
 
 // github_pat_ fine-grained tokens (GitHub's newer format, 2023+) were NOT
 // covered by the api_key_github pattern, which only matched classic prefixes
-// (ghp_/gho_/ghs_/ghu_/ghr_). Regression test from the tidebreak text E2E run.
+// (ghp_/gho_/ghs_/ghu_/ghr_). Regression test from the tidegate text E2E run.
 func TestRedactGitHubFineGrainedToken(t *testing.T) {
 	r := New()
 	defer r.Clear()
@@ -36,8 +36,8 @@ func TestRedactGitHubFineGrainedToken(t *testing.T) {
 			if strings.Contains(redacted, "github_pat_") {
 				t.Error("redacted content still contains github_pat_ prefix")
 			}
-			if !strings.Contains(redacted, "[TB:TOKEN:") {
-				t.Error("redacted content missing [TB:TOKEN: token")
+			if !strings.Contains(redacted, "[TG:TOKEN:") {
+				t.Error("redacted content missing [TG:TOKEN: token")
 			}
 			if summary["api_key_github"] != 1 {
 				t.Errorf("expected 1 api_key_github redaction, got %d", summary["api_key_github"])
@@ -65,7 +65,7 @@ func TestGitHubFineGrainedNoFalsePositives(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			redacted, _ := r.Redact(tc.content)
-			if strings.Contains(redacted, "[TB:TOKEN:") {
+			if strings.Contains(redacted, "[TG:TOKEN:") {
 				t.Errorf("false positive: %q produced %q", tc.content, redacted)
 			}
 		})

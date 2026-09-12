@@ -1,5 +1,5 @@
-# Tidebreak — Example Docker Config
-# Copy to config/tidebreak.conf and edit as needed.
+# Tidegate — Example Docker Config
+# Copy to config/tidegate.conf and edit as needed.
 
 [gateway]
 port = 8842

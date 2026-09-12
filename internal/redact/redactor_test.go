@@ -21,7 +21,7 @@ func TestRedactIPv4(t *testing.T) {
 	if strings.Contains(redacted, "10.0.0.1") {
 		t.Error("redacted content still contains original IP")
 	}
-	if !strings.Contains(redacted, "[TB:IP:") {
+	if !strings.Contains(redacted, "[TG:IP:") {
 		t.Error("redacted content missing token")
 	}
 }
@@ -42,8 +42,8 @@ func TestRedactDistinctValuesGetDistinctTokens(t *testing.T) {
 	}
 
 	// Two distinct IPs should get two distinct tokens
-	tokenA := "[TB:IP:1]"
-	tokenB := "[TB:IP:2]"
+	tokenA := "[TG:IP:1]"
+	tokenB := "[TG:IP:2]"
 	if !strings.Contains(redacted, tokenA) {
 		t.Errorf("expected token %s in redacted output: %s", tokenA, redacted)
 	}
@@ -79,7 +79,7 @@ func TestRedactEmail(t *testing.T) {
 	if strings.Contains(redacted, "admin@example.com") {
 		t.Error("redacted content still contains email")
 	}
-	if !strings.Contains(redacted, "[TB:EMAIL:") {
+	if !strings.Contains(redacted, "[TG:EMAIL:") {
 		t.Error("redacted content missing token")
 	}
 }
@@ -97,7 +97,7 @@ func TestRedactGitHubToken(t *testing.T) {
 	if strings.Contains(redacted, "ghp_") {
 		t.Error("redacted content still contains GitHub token")
 	}
-	if !strings.Contains(redacted, "[TB:TOKEN:") {
+	if !strings.Contains(redacted, "[TG:TOKEN:") {
 		t.Error("redacted content missing token")
 	}
 }
@@ -115,7 +115,7 @@ func TestRedactOpenAIToken(t *testing.T) {
 	if strings.Contains(redacted, "sk-proj-") {
 		t.Error("redacted content still contains OpenAI token")
 	}
-	if !strings.Contains(redacted, "[TB:TOKEN:") {
+	if !strings.Contains(redacted, "[TG:TOKEN:") {
 		t.Error("redacted content missing token")
 	}
 }
@@ -133,7 +133,7 @@ func TestRedactAnthropicToken(t *testing.T) {
 	if strings.Contains(redacted, "sk-ant-") {
 		t.Error("redacted content still contains Anthropic token")
 	}
-	if !strings.Contains(redacted, "[TB:TOKEN:") {
+	if !strings.Contains(redacted, "[TG:TOKEN:") {
 		t.Error("redacted content missing token")
 	}
 }
@@ -151,7 +151,7 @@ func TestRedactAWSToken(t *testing.T) {
 	if strings.Contains(redacted, "AKIA") {
 		t.Error("redacted content still contains AWS token")
 	}
-	if !strings.Contains(redacted, "[TB:TOKEN:") {
+	if !strings.Contains(redacted, "[TG:TOKEN:") {
 		t.Error("redacted content missing token")
 	}
 }
@@ -169,7 +169,7 @@ func TestRedactJWT(t *testing.T) {
 	if strings.Contains(redacted, "eyJ") {
 		t.Error("redacted content still contains JWT")
 	}
-	if !strings.Contains(redacted, "[TB:JWT:") {
+	if !strings.Contains(redacted, "[TG:JWT:") {
 		t.Error("redacted content missing token")
 	}
 }
@@ -187,7 +187,7 @@ func TestRedactPrivateKey(t *testing.T) {
 	if strings.Contains(redacted, "BEGIN RSA PRIVATE KEY") {
 		t.Error("redacted content still contains private key block")
 	}
-	if !strings.Contains(redacted, "[TB:KEY:") {
+	if !strings.Contains(redacted, "[TG:KEY:") {
 		t.Error("redacted content missing key token")
 	}
 }
@@ -289,7 +289,7 @@ func TestDeduplication(t *testing.T) {
 		t.Errorf("expected 1 mapping entry (dedup), got %d", r.MappingCount())
 	}
 	// All occurrences should be the same token
-	token := "[TB:IP:1]"
+	token := "[TG:IP:1]"
 	count := strings.Count(redacted, token)
 	if count != 3 {
 		t.Errorf("expected 3 occurrences of same token, got %d", count)
@@ -382,7 +382,7 @@ func TestNoFalsePositiveVersionNumbers(t *testing.T) {
 
 	// "1.22.2" has 3 segments, not 4 — should not match IPv4
 	// "20.10.0" same — should not match
-	if strings.Contains(redacted, "[TB:IP:") {
+	if strings.Contains(redacted, "[TG:IP:") {
 		t.Error("version numbers should not be redacted as IPs")
 	}
 }

@@ -5,7 +5,7 @@ import (
 )
 
 // StreamRedactor handles reverse-mapping of redaction tokens in streaming
-// SSE responses. Tokens like [TB:IP:1] can be split across chunks, so a
+// SSE responses. Tokens like [TG:IP:1] can be split across chunks, so a
 // small boundary buffer is maintained to catch partial tokens.
 //
 // The stream redactor only does REVERSE mapping (token → original value).
@@ -20,11 +20,11 @@ type StreamRedactor struct {
 }
 
 // partialTokenStart matches a potential partial TB token at the end of a string.
-// Only matches [TB: prefixed partial tokens, not arbitrary opening brackets.
-var partialTokenStart = regexp.MustCompile(`\[TB:[A-Z]*:?[0-9]*$`)
+// Only matches [TG: prefixed partial tokens, not arbitrary opening brackets.
+var partialTokenStart = regexp.MustCompile(`\[TG:[A-Z]*:?[0-9]*$`)
 
-// tokenFullRegex matches complete [TB:CATEGORY:N] tokens anywhere in the string.
-var tokenFullRegex = regexp.MustCompile(`\[TB:[A-Z]+:\d+\]`)
+// tokenFullRegex matches complete [TG:CATEGORY:N] tokens anywhere in the string.
+var tokenFullRegex = regexp.MustCompile(`\[TG:[A-Z]+:\d+\]`)
 
 // NewStreamRedactor creates a StreamRedactor from a TokenMatcher.
 func NewStreamRedactor(matcher *TokenMatcher) *StreamRedactor {

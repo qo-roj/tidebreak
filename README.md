@@ -1,4 +1,4 @@
-# Tidebreak
+# Tidegate
 
 A local redaction gateway for AI coding agents.
 
@@ -12,7 +12,7 @@ Your SSH keys, API tokens, user data, internal hostnames, and PII travel to
 third-party servers on every agent request. No agent harness ships with a data
 protection layer.
 
-Tidebreak fixes this. It's a local proxy that intercepts every LLM API call,
+Tidegate fixes this. It's a local proxy that intercepts every LLM API call,
 classifies the content, redacts sensitive data, and routes appropriately — cloud
 models see scrubbed context, local Ollama handles anything that can't leave the
 machine.
@@ -22,10 +22,10 @@ machine.
 ### Option A — Install script (downloads release binary)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/qo-roj/tidebreak/main/scripts/install.sh | bash
-tidebreak setup-ollama     # configure local model
-tidebreak start             # start gateway
-tidebreak install --all     # configure your agents
+curl -fsSL https://raw.githubusercontent.com/qo-roj/tidegate/main/scripts/install.sh | bash
+tidegate setup-ollama     # configure local model
+tidegate start             # start gateway
+tidegate install --all     # configure your agents
 ```
 
 The script installs to `/usr/local/bin` when possible (writable, or
@@ -39,31 +39,31 @@ warn-only behavior.
 ### Option B — Build from source (requires Go 1.25+)
 
 ```bash
-git clone https://github.com/qo-roj/tidebreak.git
-cd tidebreak
+git clone https://github.com/qo-roj/tidegate.git
+cd tidegate
 make build
 make install                # /usr/local/bin if writable, else ~/.local/bin
-tidebreak setup-ollama
-tidebreak start
-tidebreak install --all
+tidegate setup-ollama
+tidegate start
+tidegate install --all
 ```
 
 ### Option C — Docker
 
 ```bash
-docker compose up -d        # starts Tidebreak + Ollama
+docker compose up -d        # starts Tidegate + Ollama
 ```
 
-See `docker-compose.yml` and `config/tidebreak.conf.example`.
+See `docker-compose.yml` and `config/tidegate.conf.example`.
 
 ## How It Works
 
 ```
-Agent ──▶ Tidebreak (localhost:8842) ──▶ ┌── Cloud API (scrubbed)
+Agent ──▶ Tidegate (localhost:8842) ──▶ ┌── Cloud API (scrubbed)
                                          └── Local Ollama (full data)
 ```
 
-1. **Intercept** — agents route through Tidebreak instead of hitting cloud APIs directly
+1. **Intercept** — agents route through Tidegate instead of hitting cloud APIs directly
 2. **Classify** — content is tiered: public / redacted / local-only / blocked
 3. **Redact** — IPs, emails, API keys, private keys, PII are replaced with tokens
 4. **Route** — sensitive content goes to local Ollama, scrubbed content goes to cloud
@@ -72,13 +72,13 @@ Agent ──▶ Tidebreak (localhost:8842) ──▶ ┌── Cloud API (scrubb
 ## Features
 
 - **Pattern redaction** — IPv4/IPv6, emails, phone numbers, API keys (GitHub, OpenAI, AWS, Anthropic, Google, Stripe, Slack, GitLab), JWTs, private keys, MAC addresses, credit cards, SSNs, database connection strings
-- **`tidebreak text`** — one-off redaction of text, files, or piped stdin for safe pasting into any web UI (ChatGPT, chatbots, tickets); `--out` writes a file, `--summary` lists what was caught
-- **Agent auto-detection** — identifies agents by `X-Tidebreak-Agent` header or `User-Agent` string (Claude Code, Codex, OpenCode, Hermes, Cursor, Aider, Cline, GitHub Copilot, Grok CLI)
+- **`tidegate text`** — one-off redaction of text, files, or piped stdin for safe pasting into any web UI (ChatGPT, chatbots, tickets); `--out` writes a file, `--summary` lists what was caught
+- **Agent auto-detection** — identifies agents by `X-Tidegate-Agent` header or `User-Agent` string (Claude Code, Codex, OpenCode, Hermes, Cursor, Aider, Cline, GitHub Copilot, Grok CLI)
 - **Path-based rules** — block / local-only / redact entire directories
 - **Two-model routing** — cloud for reasoning on scrubbed data, Ollama for sensitive data
 - **Audit log** — SQLite-backed, full transparency, real-time monitoring (`--tail`, `--watch`), export and rotation
 - **Presets** — desktop, server, paranoid, training-data (PII-safe fine-tuning) configurations out of the box
-- **Per-project rules** — `.tidebreak.conf` in any project root
+- **Per-project rules** — `.tidegate.conf` in any project root
 - **Per-agent rules** — different agents get different access levels
 - **Docker support** — official `docker compose` setup with Ollama sidecar
 - **CI/CD** — GitHub Actions with automated testing and cross-platform release binaries

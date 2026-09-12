@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-// ParseConfig reads and parses a Tidebreak config file.
+// ParseConfig reads and parses a Tidegate config file.
 // The format is INI-style with sections [block], [local-only], [redact],
 // [redaction.patterns], and [agent:<name>].
 func ParseConfig(path string) (*Config, error) {

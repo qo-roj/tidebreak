@@ -1,4 +1,4 @@
-// Package audit provides an asynchronous audit log for the Tidebreak gateway.
+// Package audit provides an asynchronous audit log for the Tidegate gateway.
 // Every intercepted request is logged with what was redacted, where it was
 // routed, and the classification tier. The log uses SQLite for queryability
 // and is written asynchronously to avoid blocking the proxy.

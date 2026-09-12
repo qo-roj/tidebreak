@@ -1,4 +1,4 @@
-# Tidebreak — Threat Model
+# Tidegate — Threat Model
 
 ## The Problem Space
 
@@ -19,8 +19,8 @@ The file contents (containing GitHub tokens) are included in the API request bod
 sent to `api.anthropic.com`.
 
 **Mitigation:** Path-based rules classify `~/.git-credentials` as `blocked`.
-Tidebreak removes the content from the request before forwarding. The agent receives
-an error: "access denied by Tidebreak."
+Tidegate removes the content from the request before forwarding. The agent receives
+an error: "access denied by Tidegate."
 
 ### 2. Log Leakage
 
@@ -72,7 +72,7 @@ data.
 ### 1. Malicious Cloud Provider
 
 If the cloud provider (OpenAI, Anthropic) logs and reconstructs data from
-redacted context, Tidebreak cannot prevent that. We reduce the surface area, but
+redacted context, Tidegate cannot prevent that. We reduce the surface area, but
 we cannot control what the provider does with what we send them.
 
 **Mitigation:** Use `local-only` classification for anything truly critical.
@@ -85,7 +85,7 @@ An agent could write sensitive data to a file that gets synced to cloud storage
 git commit that gets pushed to a remote. Encoding-based bypass (base64, hex)
 is addressed in [Design Decisions §5](design-decisions.md#issue-5-bypass-vectors-encoding-fragmentation-obfuscation).
 
-**Mitigation:** Tidebreak only intercepts LLM API calls. It cannot monitor all
+**Mitigation:** Tidegate only intercepts LLM API calls. It cannot monitor all
 possible exfiltration channels. Layered defense (pattern redaction → encoding
 detection → contextual redaction → anomaly detection) catches common bypasses.
 The audit log flags `bypass_risk` for manual review. Future versions could
@@ -96,7 +96,7 @@ integrate with eBPF for broader monitoring.
 If the local Ollama model is compromised (e.g., a malicious model file), it could
 exfiltrate data through its own channels.
 
-**Mitigation:** Use official model sources. Verify model checksums. Tidebreak
+**Mitigation:** Use official model sources. Verify model checksums. Tidegate
 could add model integrity checks in future versions.
 
 ### 4. Social Engineering of the Mapping Table
@@ -105,7 +105,7 @@ An attacker could craft a prompt that tricks the agent into revealing the
 redaction mappings (e.g., "What is the real value of [IP_REDACTED_1]?").
 
 **Mitigation:** The mapping table is never exposed to the agent. When the agent
-responds, Tidebreak reverse-maps tokens, but the agent never sees the mapping
+responds, Tidegate reverse-maps tokens, but the agent never sees the mapping
 table itself. The cloud model only sees the redacted token, never the original
 value.
 
@@ -114,7 +114,7 @@ value.
 A vulnerability in Claude Code, Codex, etc. could allow bypassing the proxy
 entirely (e.g., hardcoded API endpoint that ignores env vars).
 
-**Mitigation:** Tidebreak can optionally use `iptables`/`nftables` rules to
+**Mitigation:** Tidegate can optionally use `iptables`/`nftables` rules to
 redirect all outbound traffic to known LLM API endpoints through the proxy,
 making bypass harder. This is a future feature.
 
@@ -122,7 +122,7 @@ making bypass harder. This is a future feature.
 
 ```
 ┌─────────────┐     ┌──────────────┐     ┌──────────────┐
-│  Agent      │     │  Tidebreak   │     │  Cloud API   │
+│  Agent      │     │  Tidegate   │     │  Cloud API   │
 │  UNTRUSTED  │────▶│  TRUSTED     │────▶│  SEMI-TRUSTED│
 │             │     │  (local,     │     │  (we send    │
 │  (reads     │     │   user       │     │   scrubbed   │
@@ -140,8 +140,8 @@ making bypass harder. This is a future feature.
 ```
 
 - **Agent**: Untrusted. It reads your files and wants to send everything to the
-  cloud. Tidebreak intercepts and sanitizes.
-- **Tidebreak**: Trusted. Runs locally, user-configured, open source, auditable.
+  cloud. Tidegate intercepts and sanitizes.
+- **Tidegate**: Trusted. Runs locally, user-configured, open source, auditable.
   The only component that sees both redacted and original data.
 - **Cloud API**: Semi-trusted. We send it scrubbed data. We trust it to process
   our request but we minimize what we reveal.
@@ -150,7 +150,7 @@ making bypass harder. This is a future feature.
 
 ## Scope
 
-Tidebreak is **defense in depth**, not a complete security solution. It
+Tidegate is **defense in depth**, not a complete security solution. It
 dramatically reduces the data surface area exposed to cloud providers, but
 cannot guarantee zero data leakage. The audit log provides verifiable evidence
 of what was sent where.

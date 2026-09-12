@@ -12,7 +12,7 @@ func TestTokenMatcherExactMatch(t *testing.T) {
 	r.Redact("Server at 203.0.113.42 and admin@example.com")
 	tm := NewTokenMatcher(r)
 
-	content := "Check [TB:IP:1] and contact [TB:EMAIL:1]"
+	content := "Check [TG:IP:1] and contact [TG:EMAIL:1]"
 	restored := tm.Restore(content)
 
 	if !strings.Contains(restored, "203.0.113.42") {
@@ -31,9 +31,9 @@ func TestTokenMatcherFuzzyMatch(t *testing.T) {
 	tm := NewTokenMatcher(r)
 
 	tests := []string{
-		`"TB:IP:1"`, // quotes
-		"`TB:IP:1`", // backticks
-		`TB:IP:1`,   // no brackets
+		`"TG:IP:1"`, // quotes
+		"`TG:IP:1`", // backticks
+		`TG:IP:1`,   // no brackets
 		`TB_IP_1`,   // underscores
 	}
 
@@ -53,10 +53,10 @@ func TestTokenMatcherUnresolvedToken(t *testing.T) {
 	tm := NewTokenMatcher(r)
 
 	// Token that doesn't exist in the mapping
-	content := "Unknown [TB:IP:99] here"
+	content := "Unknown [TG:IP:99] here"
 	restored := tm.Restore(content)
 
-	if !strings.Contains(restored, "[TB:IP:99]") {
+	if !strings.Contains(restored, "[TG:IP:99]") {
 		t.Error("unresolved token should be left as-is")
 	}
 }
@@ -68,7 +68,7 @@ func TestTokenMatcherUnresolvedTokensList(t *testing.T) {
 	r.Redact("IP 203.0.113.42")
 	tm := NewTokenMatcher(r)
 
-	content := "Known [TB:IP:1] and unknown [TB:IP:42] and also [TB:EMAIL:3]"
+	content := "Known [TG:IP:1] and unknown [TG:IP:42] and also [TG:EMAIL:3]"
 	unresolved := tm.UnresolvedTokens(content)
 
 	if len(unresolved) != 2 {
@@ -85,7 +85,7 @@ func TestStreamRedactorBasic(t *testing.T) {
 	sr := NewStreamRedactor(tm)
 
 	// Single chunk with complete token
-	out := sr.ProcessChunk([]byte("The IP is [TB:IP:1] yes"))
+	out := sr.ProcessChunk([]byte("The IP is [TG:IP:1] yes"))
 	if !strings.Contains(string(out), "203.0.113.42") {
 		t.Errorf("expected IP restored, got %q", out)
 	}
@@ -100,7 +100,7 @@ func TestStreamRedactorSplitToken(t *testing.T) {
 	sr := NewStreamRedactor(tm)
 
 	// Token split across two chunks
-	out1 := sr.ProcessChunk([]byte("The IP is [TB:IP:"))
+	out1 := sr.ProcessChunk([]byte("The IP is [TG:IP:"))
 	if strings.Contains(string(out1), "203.0.113.42") {
 		t.Error("should not have restored yet — token is incomplete")
 	}
@@ -135,7 +135,7 @@ func TestStreamRedactorFlush(t *testing.T) {
 	sr := NewStreamRedactor(tm)
 
 	// Send a chunk that leaves a partial token in the buffer
-	sr.ProcessChunk([]byte("IP is [TB:IP:"))
+	sr.ProcessChunk([]byte("IP is [TG:IP:"))
 	remaining := sr.Flush()
 	if len(remaining) == 0 {
 		t.Error("expected remaining buffer to be flushed")
@@ -152,7 +152,7 @@ func TestStreamRedactorMultipleTokens(t *testing.T) {
 	sr := NewStreamRedactor(tm)
 
 	// All three tokens in one chunk
-	out := sr.ProcessChunk([]byte("Found [TB:IP:1] [TB:EMAIL:1] [TB:TOKEN:1] done"))
+	out := sr.ProcessChunk([]byte("Found [TG:IP:1] [TG:EMAIL:1] [TG:TOKEN:1] done"))
 	outStr := string(out)
 
 	if !strings.Contains(outStr, "203.0.113.42") {
@@ -175,7 +175,7 @@ func TestStreamRedactorNoFalseBuffer(t *testing.T) {
 	sr := NewStreamRedactor(tm)
 
 	// Text that ends with [ but is not a token
-	out1 := sr.ProcessChunk([]byte("array[0] = [TB:IP:1]"))
+	out1 := sr.ProcessChunk([]byte("array[0] = [TG:IP:1]"))
 	out2 := sr.ProcessChunk([]byte(" value[1]"))
 	combined := string(out1) + string(out2)
 
@@ -188,7 +188,7 @@ func TestStreamRedactorNoFalseBuffer(t *testing.T) {
 }
 
 func TestSanitizeForLog(t *testing.T) {
-	s := "Redacted [TB:IP:1] with [TB:EMAIL:2]"
+	s := "Redacted [TG:IP:1] with [TG:EMAIL:2]"
 	result := SanitizeForLog(s)
 	// Should keep tokens as-is (they don't contain original values)
 	if result != s {
@@ -197,7 +197,7 @@ func TestSanitizeForLog(t *testing.T) {
 }
 
 func TestIsTokenContent(t *testing.T) {
-	if !IsTokenContent("has [TB:IP:1] token") {
+	if !IsTokenContent("has [TG:IP:1] token") {
 		t.Error("expected true for content with token")
 	}
 	if IsTokenContent("no tokens here") {

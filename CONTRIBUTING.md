@@ -1,4 +1,4 @@
-# Contributing to Tidebreak
+# Contributing to Tidegate
 
 Thanks for your interest in making AI agents safer to use. 🦞🐚
 
@@ -7,18 +7,18 @@ Thanks for your interest in making AI agents safer to use. 🦞🐚
 - **Bug reports** — found a redaction bypass, a crash, or a routing bug? Open an issue.
 - **New patterns** — know an API key format, PII pattern, or sensitive data type we missed? Add it to the rules.
 - **New cloud provider routes** — want to see Google, Cohere, or HuggingFace supported? Add a route in the router.
-- **Agent integrations** — tested Tidebreak with an agent we don't list? Let us know.
+- **Agent integrations** — tested Tidegate with an agent we don't list? Let us know.
 - **Docs** — clearer docs save someone's data.
 
 ## Before you start
 
-1. **Go 1.25+** — Tidebreak uses recent Go features.
-2. **Ollama** (optional) — needed for `local-only` tier testing. `tidebreak setup-ollama` configures a model.
+1. **Go 1.25+** — Tidegate uses recent Go features.
+2. **Ollama** (optional) — needed for `local-only` tier testing. `tidegate setup-ollama` configures a model.
 3. Clone, build, and run tests:
 
 ```bash
-git clone https://github.com/qo-roj/tidebreak.git
-cd tidebreak
+git clone https://github.com/qo-roj/tidegate.git
+cd tidegate
 make build
 make test        # runs all tests with -race
 ```

@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/qo-roj/tidebreak/internal/rules"
+	"github.com/qo-roj/tidegate/internal/rules"
 )
 
 func makeRuleSet() *rules.RuleSet {

@@ -9,15 +9,15 @@ import (
 // It handles cases where the cloud model reformats tokens (quotes, backticks,
 // stripped brackets, underscore substitution).
 //
-// Token format: [TB:CATEGORY:N] (e.g. [TB:IP:1])
+// Token format: [TG:CATEGORY:N] (e.g. [TG:IP:1])
 //
 // Fuzzy matches catch:
-//   - "TB:IP:1"      (quotes stripped)
-//   - `TB:IP:1`      (backticks stripped)
-//   - TB:IP:1        (brackets stripped)
+//   - "TG:IP:1"      (quotes stripped)
+//   - `TG:IP:1`      (backticks stripped)
+//   - TG:IP:1        (brackets stripped)
 //   - TB_IP_1        (underscores substituted)
 type TokenMatcher struct {
-	mappings map[string]string // exact: "[TB:IP:1]" → "203.0.113.42"
+	mappings map[string]string // exact: "[TG:IP:1]" → "203.0.113.42"
 	fuzzy    []fuzzyPattern
 }
 
@@ -27,8 +27,8 @@ type fuzzyPattern struct {
 	captureGroup int
 }
 
-// tokenRegex matches the canonical [TB:CATEGORY:N] format.
-var tokenRegex = regexp.MustCompile(`\[TB:([A-Z]+):(\d+)\]`)
+// tokenRegex matches the canonical [TG:CATEGORY:N] format.
+var tokenRegex = regexp.MustCompile(`\[TG:([A-Z]+):(\d+)\]`)
 
 // NewTokenMatcher creates a TokenMatcher from a redactor's current mapping.
 func NewTokenMatcher(r *Redactor) *TokenMatcher {
@@ -54,7 +54,7 @@ func NewTokenMatcher(r *Redactor) *TokenMatcher {
 	// Build fuzzy patterns for each category present in the mapping
 	for cat := range categories {
 		tm.fuzzy = append(tm.fuzzy, fuzzyPattern{
-			// Match: "TB:CAT:N", `TB:CAT:N`, TB:CAT:N, TB_CAT_N
+			// Match: "TG:CAT:N", `TG:CAT:N`, TG:CAT:N, TB_CAT_N
 			regex:        regexp.MustCompile(`["'` + "`" + `]?TB[:_]` + cat + `[:_](\d+)["'` + "`" + `]?`),
 			category:     cat,
 			captureGroup: 1,
@@ -71,7 +71,7 @@ func (tm *TokenMatcher) Restore(content string) string {
 		return content
 	}
 
-	// Phase 1: exact matches [TB:CATEGORY:N]
+	// Phase 1: exact matches [TG:CATEGORY:N]
 	result := tokenRegex.ReplaceAllStringFunc(content, func(match string) string {
 		if original, ok := tm.mappings[match]; ok {
 			return original
@@ -89,7 +89,7 @@ func (tm *TokenMatcher) Restore(content string) string {
 			}
 			num := subs[fp.captureGroup]
 			// Build the canonical token and look it up
-			canonical := "[TB:" + fp.category + ":" + num + "]"
+			canonical := "[TG:" + fp.category + ":" + num + "]"
 			if original, ok := tm.mappings[canonical]; ok {
 				return original
 			}
@@ -105,7 +105,7 @@ func (tm *TokenMatcher) HasMappings() bool {
 	return len(tm.mappings) > 0
 }
 
-// UnresolvedTokens scans content for any remaining [TB:*:*] tokens that
+// UnresolvedTokens scans content for any remaining [TG:*:*] tokens that
 // couldn't be resolved. Returns the list of unresolved tokens found.
 func (tm *TokenMatcher) UnresolvedTokens(content string) []string {
 	var unresolved []string
@@ -121,19 +121,19 @@ func (tm *TokenMatcher) UnresolvedTokens(content string) []string {
 }
 
 // SanitizeForLog strips token values from a string for safe logging.
-// Replaces [TB:CAT:N] with [TB:CAT:N] (no original values exposed).
+// Replaces [TG:CAT:N] with [TG:CAT:N] (no original values exposed).
 func SanitizeForLog(s string) string {
 	return tokenRegex.ReplaceAllStringFunc(s, func(match string) string {
 		subs := tokenRegex.FindStringSubmatch(match)
 		if len(subs) >= 3 {
-			return "[TB:" + subs[1] + ":" + subs[2] + "]"
+			return "[TG:" + subs[1] + ":" + subs[2] + "]"
 		}
 		return match
 	})
 }
 
 // TokenPrefix returns the common prefix for all redaction tokens.
-const TokenPrefix = "[TB:"
+const TokenPrefix = "[TG:"
 
 // IsTokenContent checks if content contains any redaction tokens.
 func IsTokenContent(s string) bool {

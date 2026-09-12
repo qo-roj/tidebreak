@@ -1,10 +1,10 @@
-# Tidebreak — Ollama Setup Script
+# Tidegate — Ollama Setup Script
 # Auto-detects hardware and recommends a model
 
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "🦞 Tidebreak — Ollama Setup"
+echo "🦞 Tidegate — Ollama Setup"
 echo ""
 
 # Check if Ollama is installed
@@ -65,7 +65,7 @@ MODEL=$(recommend_model)
 
 echo "Recommended model: ${MODEL}"
 echo ""
-echo "This model will be used by Tidebreak for local-only content processing."
+echo "This model will be used by Tidegate for local-only content processing."
 echo "It reads sensitive data locally and produces de-identified summaries"
 echo "that can safely be sent to cloud LLM providers."
 echo ""
@@ -79,8 +79,8 @@ if [[ "$REPLY" =~ ^[Yy]$ ]]; then
     echo ""
     echo "✓ Model '${MODEL}' is ready."
     echo ""
-    echo "Configure Tidebreak to use it:"
-    echo "  tidebreak config set local.ollama_model ${MODEL}"
+    echo "Configure Tidegate to use it:"
+    echo "  tidegate config set local.ollama_model ${MODEL}"
 else
     echo ""
     echo "Skipped. You can pull it later with: ollama pull ${MODEL}"
@@ -88,4 +88,4 @@ fi
 
 echo ""
 echo "Ollama is running at http://localhost:11434"
-echo "Tidebreak will connect automatically."
+echo "Tidegate will connect automatically."

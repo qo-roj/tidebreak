@@ -66,13 +66,13 @@ jobs:
         run: |
           mkdir -p dist
           go build -ldflags "-X main.Version=$(git describe --tags --always --dirty 2>/dev/null || echo dev)" \
-            -o dist/tidebreak-${{ matrix.os }}-${{ matrix.arch }} ./cmd/tidebreak
+            -o dist/tidegate-${{ matrix.os }}-${{ matrix.arch }} ./cmd/tidegate
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: tidebreak-${{ matrix.os }}-${{ matrix.arch }}
-          path: dist/tidebreak-${{ matrix.os }}-${{ matrix.arch }}
+          name: tidegate-${{ matrix.os }}-${{ matrix.arch }}
+          path: dist/tidegate-${{ matrix.os }}-${{ matrix.arch }}
 
   release:
     name: Upload release binaries
@@ -95,10 +95,10 @@ jobs:
           for platform in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
             GOOS=${platform%/*} GOARCH=${platform#*/} \
             go build -ldflags "-X main.Version=${GITHUB_REF_NAME}" \
-              -o dist/tidebreak-${platform%/*}-${platform#*/} ./cmd/tidebreak
+              -o dist/tidegate-${platform%/*}-${platform#*/} ./cmd/tidegate
           done
 
       - name: Upload release assets
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/tidebreak-*
+          files: dist/tidegate-*

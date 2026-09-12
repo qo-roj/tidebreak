@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/qo-roj/tidebreak/internal/redact"
+	"github.com/qo-roj/tidegate/internal/redact"
 )
 
 // DefaultSummarizationPrompt is the prompt used for local-only content.

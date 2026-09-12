@@ -9,9 +9,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/qo-roj/tidebreak/internal/config"
-	"github.com/qo-roj/tidebreak/internal/redact"
-	"github.com/qo-roj/tidebreak/internal/route"
+	"github.com/qo-roj/tidegate/internal/config"
+	"github.com/qo-roj/tidegate/internal/redact"
+	"github.com/qo-roj/tidegate/internal/route"
 )
 
 // cmdText redacts free-form text: arguments, a file, or stdin. Output is
@@ -31,9 +31,9 @@ func cmdText(args []string) {
 	positionals, flagAfterText := splitTextArgs(fs.Args())
 	if flagAfterText != "" {
 		if len(positionals) == 0 {
-			fmt.Fprintf(os.Stderr, "Error: %s is not a tidebreak text flag and no text was given.\nUsage: tidebreak text [flags] \"your text\"\n", flagAfterText)
+			fmt.Fprintf(os.Stderr, "Error: %s is not a tidegate text flag and no text was given.\nUsage: tidegate text [flags] \"your text\"\n", flagAfterText)
 		} else {
-			fmt.Fprintf(os.Stderr, "Error: %s appears after the text.\nFlags go before it: tidebreak text %s \"your text\"\n", flagAfterText, flagAfterText)
+			fmt.Fprintf(os.Stderr, "Error: %s appears after the text.\nFlags go before it: tidegate text %s \"your text\"\n", flagAfterText, flagAfterText)
 		}
 		os.Exit(1)
 	}
@@ -72,7 +72,7 @@ func cmdText(args []string) {
 		}
 		content = string(data)
 	} else {
-		fmt.Fprintln(os.Stderr, `Usage: tidebreak text "some text" | --file <path> | (piped stdin)
+		fmt.Fprintln(os.Stderr, `Usage: tidegate text "some text" | --file <path> | (piped stdin)
 Redacts sensitive data (IPs, emails, keys...) so it is safe to paste anywhere.`)
 		os.Exit(1)
 	}
@@ -109,7 +109,7 @@ func joinTextArgs(args []string) string {
 // the text (Go's parser stops at the first positional, so such flags arrive
 // here un-parsed and would otherwise be silently redacted into the output).
 // Only long flags (--word) count — a bare "-" or short "-u" in prose is
-// far more likely to be text than a tidebreak flag.
+// far more likely to be text than a tidegate flag.
 func splitTextArgs(positionals []string) (text []string, flagAfterText string) {
 	for i, a := range positionals {
 		if strings.HasPrefix(a, "--") && len(a) > 2 {

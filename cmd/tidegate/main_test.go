@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/qo-roj/tidebreak/internal/redact"
+	"github.com/qo-roj/tidegate/internal/redact"
 )
 
 func TestJoinTextArgs(t *testing.T) {
@@ -39,14 +39,14 @@ func TestRunTextRedactsSensitive(t *testing.T) {
 	if strings.Contains(out, "192.168.1.100") {
 		t.Errorf("output still contains raw IP: %q", out)
 	}
-	if !strings.Contains(out, "[TB:IP:1]") {
-		t.Errorf("output missing [TB:IP:1] token: %q", out)
+	if !strings.Contains(out, "[TG:IP:1]") {
+		t.Errorf("output missing [TG:IP:1] token: %q", out)
 	}
 	if strings.Contains(out, "bob@example.com") {
 		t.Errorf("output still contains raw email: %q", out)
 	}
-	if !strings.Contains(out, "[TB:EMAIL:1]") {
-		t.Errorf("output missing [TB:EMAIL:1] token: %q", out)
+	if !strings.Contains(out, "[TG:EMAIL:1]") {
+		t.Errorf("output missing [TG:EMAIL:1] token: %q", out)
 	}
 	if summary.Total() < 2 {
 		t.Errorf("summary total = %d, want >= 2", summary.Total())

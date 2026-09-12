@@ -1,4 +1,4 @@
-module github.com/qo-roj/tidebreak
+module github.com/qo-roj/tidegate
 
 go 1.25.0
 

@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/qo-roj/tidebreak/internal/audit"
-	"github.com/qo-roj/tidebreak/internal/route"
-	"github.com/qo-roj/tidebreak/internal/rules"
+	"github.com/qo-roj/tidegate/internal/audit"
+	"github.com/qo-roj/tidegate/internal/route"
+	"github.com/qo-roj/tidegate/internal/rules"
 )
 
 // makeTestServer creates a proxy Server with a test router.
@@ -107,7 +107,7 @@ func (m *mockUpstream) handle(w http.ResponseWriter, r *http.Request) {
 func makeChatRequest(t *testing.T, body string, provider string) *http.Request {
 	req := httptest.NewRequest("POST", "/"+provider+"/v1/chat/completions", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Tidebreak-Agent", "test-agent")
+	req.Header.Set("X-Tidegate-Agent", "test-agent")
 	req.Header.Set("Authorization", "Bearer test-key")
 	return req
 }
@@ -170,7 +170,7 @@ func TestProxyRedactsPIIBeforeForwarding(t *testing.T) {
 	if strings.Contains(receivedStr, "203.0.113.42") {
 		t.Error("upstream should not receive raw IP")
 	}
-	if !strings.Contains(receivedStr, "[TB:IP:") {
+	if !strings.Contains(receivedStr, "[TG:IP:") {
 		t.Error("upstream should receive redacted token")
 	}
 }
@@ -184,7 +184,7 @@ func TestProxyRestoresTokensInResponse(t *testing.T) {
 	}), "openai")
 
 	// Upstream response echoes the token back
-	upstream.responseBody = `{"content": "The IP [TB:IP:1] is reachable"}`
+	upstream.responseBody = `{"content": "The IP [TG:IP:1] is reachable"}`
 
 	rec := httptest.NewRecorder()
 	srv.handleProxy(rec, req)
@@ -193,7 +193,7 @@ func TestProxyRestoresTokensInResponse(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), "203.0.113.42") {
 		t.Errorf("response should restore IP, got: %s", rec.Body.String())
 	}
-	if strings.Contains(rec.Body.String(), "[TB:IP:") {
+	if strings.Contains(rec.Body.String(), "[TG:IP:") {
 		t.Error("response should not contain raw token")
 	}
 }
@@ -257,7 +257,7 @@ func TestProxyStripsPathPrefix(t *testing.T) {
 	}
 }
 
-func TestProxyFiltersTidebreakAgentHeader(t *testing.T) {
+func TestProxyFiltersTidegateAgentHeader(t *testing.T) {
 	srv, upstream := makeTestServer(t)
 	upstream.responseBody = `{"content": "OK"}`
 
@@ -269,9 +269,9 @@ func TestProxyFiltersTidebreakAgentHeader(t *testing.T) {
 	rec := httptest.NewRecorder()
 	srv.handleProxy(rec, req)
 
-	// X-Tidebreak-Agent should NOT be forwarded
-	if upstream.receivedHeaders.Get("X-Tidebreak-Agent") != "" {
-		t.Error("X-Tidebreak-Agent should be stripped")
+	// X-Tidegate-Agent should NOT be forwarded
+	if upstream.receivedHeaders.Get("X-Tidegate-Agent") != "" {
+		t.Error("X-Tidegate-Agent should be stripped")
 	}
 	// Cookie should NOT be forwarded
 	if upstream.receivedHeaders.Get("Cookie") != "" {
@@ -366,7 +366,7 @@ func TestProxyStreamingResponseRestoresTokens(t *testing.T) {
 	}), "openai")
 
 	// Upstream returns SSE with the token split across chunks
-	upstream.responseBody = "data: {\"content\": \"IP [TB:IP:1]\"}\n\ndata: [DONE]\n\n"
+	upstream.responseBody = "data: {\"content\": \"IP [TG:IP:1]\"}\n\ndata: [DONE]\n\n"
 	upstream.statusCode = 200
 
 	// Override upstream handler to return SSE
@@ -378,7 +378,7 @@ func TestProxyStreamingResponseRestoresTokens(t *testing.T) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(200)
 		// Send the token split across two writes
-		w.Write([]byte("data: {\"content\": \"IP [TB:IP"))
+		w.Write([]byte("data: {\"content\": \"IP [TG:IP"))
 		if f, ok := w.(http.Flusher); ok {
 			f.Flush()
 		}
@@ -396,7 +396,7 @@ func TestProxyStreamingResponseRestoresTokens(t *testing.T) {
 	if !strings.Contains(body, "203.0.113.42") {
 		t.Errorf("streaming response should restore IP, got: %s", body)
 	}
-	if strings.Contains(body, "[TB:IP:") {
+	if strings.Contains(body, "[TG:IP:") {
 		t.Error("streaming response should not contain raw token")
 	}
 }
@@ -404,12 +404,12 @@ func TestProxyStreamingResponseRestoresTokens(t *testing.T) {
 func TestProxyConcurrentRequestsNoCrossContamination(t *testing.T) {
 	srv, upstream := makeTestServer(t)
 
-	// Use a stateless upstream handler that returns [TB:IP:1] for each request.
+	// Use a stateless upstream handler that returns [TG:IP:1] for each request.
 	// Don't write to shared upstream fields to avoid data races.
 	upstream.server.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(200)
-		w.Write([]byte(`{"content": "response with [TB:IP:1]"}`))
+		w.Write([]byte(`{"content": "response with [TG:IP:1]"}`))
 	})
 
 	// Send two concurrent requests with different IPs

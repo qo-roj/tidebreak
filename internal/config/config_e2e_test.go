@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/qo-roj/tidebreak/internal/rules"
+	"github.com/qo-roj/tidegate/internal/rules"
 )
 
 // End-to-end config.Load test: a preset selected in the user config file
@@ -15,14 +15,14 @@ func TestConfigPresetFromFileAppliesRules(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
-	confDir := filepath.Join(home, ".config", "tidebreak")
+	confDir := filepath.Join(home, ".config", "tidegate")
 	if err := os.MkdirAll(confDir, 0755); err != nil {
 		t.Fatal(err)
 	}
 	// User picks paranoid; if it applies, /var/log/syslog goes local-only
 	// (paranoid has /var/log/** in local-only) instead of defaults'
 	// redacted tier.
-	err := os.WriteFile(filepath.Join(confDir, "tidebreak.conf"), []byte(`
+	err := os.WriteFile(filepath.Join(confDir, "tidegate.conf"), []byte(`
 [preset]
 paranoid
 
@@ -95,11 +95,11 @@ func TestConfigUnknownPresetFails(t *testing.T) {
 		t.Error("unknown CLI preset should fail config.Load")
 	}
 
-	confDir := filepath.Join(home, ".config", "tidebreak")
+	confDir := filepath.Join(home, ".config", "tidegate")
 	if err := os.MkdirAll(confDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(confDir, "tidebreak.conf"), []byte("[preset]\nno-such-preset\n"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(confDir, "tidegate.conf"), []byte("[preset]\nno-such-preset\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Load(0, ""); err == nil {

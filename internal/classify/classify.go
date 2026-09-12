@@ -1,5 +1,5 @@
 // Package classify implements content-block-level classification for the
-// Tidebreak gateway. It parses LLM API request structures, extracts content
+// Tidegate gateway. It parses LLM API request structures, extracts content
 // blocks (messages, tool results, file contents), and assigns a tier to each
 // block using path rules, command rules, and pattern-based heuristics.
 //
@@ -11,7 +11,7 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/qo-roj/tidebreak/internal/rules"
+	"github.com/qo-roj/tidegate/internal/rules"
 )
 
 // ContentBlock represents a unit of content within an LLM API request.

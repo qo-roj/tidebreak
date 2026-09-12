@@ -1,8 +1,8 @@
-# Tidebreak — Architecture
+# Tidegate — Architecture
 
 ## Overview
 
-Tidebreak is a local HTTPS proxy daemon that intercepts, classifies, redacts, and routes
+Tidegate is a local HTTPS proxy daemon that intercepts, classifies, redacts, and routes
 LLM API calls between AI coding agents and cloud providers.
 
 ```
@@ -14,7 +14,7 @@ LLM API calls between AI coding agents and cloud providers.
                                            │ (to localhost:8842)
                                            ▼
 ┌──────────────────────────────────────────────────────────────┐
-│  Tidebreak Gateway (localhost:8842)                          │
+│  Tidegate Gateway (localhost:8842)                          │
 │                                                              │
 │  ┌─────────────┐    ┌──────────────┐    ┌──────────────┐     │
 │  │  Proxy      │───▶│  Classifier  │───▶│  Redactor   │     │
@@ -56,7 +56,7 @@ LLM API calls between AI coding agents and cloud providers.
   - `/openai/*` → OpenAI API
   - `/xai/*` → xAI API
   - `/ollama/*` → local Ollama (passthrough, no redaction needed)
-- Agent identification via `X-Tidebreak-Agent` header, API key fingerprint, or port (see [Design Decisions §7](design-decisions.md#issue-7-per-agent-identification))
+- Agent identification via `X-Tidegate-Agent` header, API key fingerprint, or port (see [Design Decisions §7](design-decisions.md#issue-7-per-agent-identification))
 - Streaming: SSE responses pass through with real-time token reverse-mapping (see [Design Decisions §2](design-decisions.md#issue-2-streaming-sse-support))
 - Transparent to agents — they just hit `localhost:8842` instead of the real API
 
@@ -90,7 +90,7 @@ escalated to the **highest** tier present (conservative — when in doubt, escal
 
 - Applies regex replacements based on enabled patterns
 - Maintains an in-memory `map[string]string` mapping redaction tokens back to originals
-- Token format: `[TB:IP:1]`, `[TB:EMAIL:3]`, `[TB:TOKEN:1]` — distinctive `TB:` prefix prevents collisions
+- Token format: `[TG:IP:1]`, `[TG:EMAIL:3]`, `[TG:TOKEN:1]` — distinctive `TG:` prefix prevents collisions
 - Reverse-maps tokens in response content (including SSE streams) so the agent can act on real values
 - Fuzzy matching handles reformatted tokens (quotes stripped, brackets removed)
 - Mappings are **scoped per request** — never shared across requests, destroyed after completion
@@ -119,7 +119,7 @@ Decision logic for where content goes:
 Content tier = PUBLIC    → forward to original cloud API (as-is)
 Content tier = REDACTED  → run redactor → forward to cloud API (scrubbed)
 Content tier = LOCAL_ONLY→ send to Ollama → get summary → forward summary to cloud
-Content tier = BLOCKED   → return error to agent: "access denied by Tidebreak"
+Content tier = BLOCKED   → return error to agent: "access denied by Tidegate"
 ```
 
 For `LOCAL_ONLY` with Ollama (two-stage redaction pipeline — see
@@ -134,7 +134,7 @@ If no Ollama is configured, `LOCAL_ONLY` content is blocked entirely.
 
 ### 5. Audit Log (`internal/audit/`)
 
-SQLite database at `~/.local/share/tidebreak/audit.db`
+SQLite database at `~/.local/share/tidegate/audit.db`
 
 Tables:
 ```sql
@@ -154,12 +154,12 @@ CREATE TABLE audit_entries (
 
 CLI query:
 ```bash
-tidebreak audit                    # last 24h summary
-tidebreak audit --live             # tail -f style
-tidebreak audit --agent claude     # filter by agent
-tidebreak audit --since 2h         # last 2 hours
-tidebreak audit --detail <id>      # full entry detail
-tidebreak audit --export > log.json # export for compliance
+tidegate audit                    # last 24h summary
+tidegate audit --live             # tail -f style
+tidegate audit --agent claude     # filter by agent
+tidegate audit --since 2h         # last 2 hours
+tidegate audit --detail <id>      # full entry detail
+tidegate audit --export > log.json # export for compliance
 ```
 
 ### 6. Ollama Integration (`internal/ollama/`)
@@ -219,8 +219,8 @@ tidebreak audit --export > log.json # export for compliance
 
 1. Built-in defaults (`rules/defaults.conf`)
 2. Preset rules (`rules/presets/desktop.conf` or `server.conf`)
-3. User config (`~/.config/tidebreak/tidebreak.conf`)
-4. Project-local config (`./.tidebreak.conf` — overrides user config)
+3. User config (`~/.config/tidegate/tidegate.conf`)
+4. Project-local config (`./.tidegate.conf` — overrides user config)
 5. CLI flags (highest priority)
 
 ## Performance Considerations
@@ -241,5 +241,5 @@ tidebreak audit --export > log.json # export for compliance
 - The proxy itself is localhost-only — no remote access to the gateway
 - Bypass vectors (encoding, fragmentation, obfuscation) are addressed via layered
   defense — see [Design Decisions §5](design-decisions.md#issue-5-bypass-vectors-encoding-fragmentation-obfuscation).
-  Tidebreak is defense in depth, not a complete solution. The audit log includes
+  Tidegate is defense in depth, not a complete solution. The audit log includes
   `bypass_risk` indicators for manual review.

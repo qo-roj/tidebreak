@@ -1,6 +1,6 @@
 .PHONY: all build test clean install lint fmt
 
-BINARY=tidebreak
+BINARY=tidegate
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS=-ldflags "-X main.Version=$(VERSION)"
 PLATFORMS=linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
@@ -8,7 +8,7 @@ PLATFORMS=linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
 all: build
 
 build:
-	go build $(LDFLAGS) -o bin/$(BINARY) ./cmd/tidebreak
+	go build $(LDFLAGS) -o bin/$(BINARY) ./cmd/tidegate
 
 test:
 	go test -v -race ./...
@@ -58,7 +58,7 @@ dist:
 		OS=$${platform%/*}; \
 		ARCH=$${platform#*/}; \
 		echo "Building $$OS/$$ARCH..."; \
-		GOOS=$$OS GOARCH=$$ARCH go build $(LDFLAGS) -o dist/$(BINARY)-$$OS-$$ARCH ./cmd/tidebreak; \
+		GOOS=$$OS GOARCH=$$ARCH go build $(LDFLAGS) -o dist/$(BINARY)-$$OS-$$ARCH ./cmd/tidegate; \
 	done
 
 # Quick smoke test

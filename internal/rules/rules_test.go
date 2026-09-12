@@ -9,7 +9,7 @@ import (
 func writeTestConfig(t *testing.T, content string) string {
 	t.Helper()
 	dir := t.TempDir()
-	path := filepath.Join(dir, "tidebreak.conf")
+	path := filepath.Join(dir, "tidegate.conf")
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}

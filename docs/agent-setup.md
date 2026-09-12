@@ -1,13 +1,13 @@
-# Tidebreak — Agent Setup Guide
+# Tidegate — Agent Setup Guide
 
-## How Tidebreak Intercepts Agent Traffic
+## How Tidegate Intercepts Agent Traffic
 
-Tidebreak works as a local HTTPS proxy. Instead of sending requests directly to
+Tidegate works as a local HTTPS proxy. Instead of sending requests directly to
 `api.anthropic.com` or `api.openai.com`, agents send them to `localhost:8842`,
 which forwards to the real API after redaction.
 
 Most agents support API base URL configuration via environment variables. For
-agents that don't, Tidebreak can use `HTTP_PROXY` / `HTTPS_PROXY` env vars.
+agents that don't, Tidegate can use `HTTP_PROXY` / `HTTPS_PROXY` env vars.
 
 ## Agent Configuration
 
@@ -24,7 +24,7 @@ export ANTHROPIC_BASE_URL=http://localhost:8842/anthropic
 Verify:
 ```bash
 claude --version
-# Run any task — check tidebreak audit to see intercepted traffic
+# Run any task — check tidegate audit to see intercepted traffic
 ```
 
 ### OpenAI Codex
@@ -60,7 +60,7 @@ providers:
   
   ollama:
     base_url: http://localhost:11434
-    # Ollama goes direct, not through Tidebreak — it IS the local model
+    # Ollama goes direct, not through Tidegate — it IS the local model
 ```
 
 ### Grok CLI (xAI)
@@ -87,32 +87,32 @@ export OPENAI_BASE_URL=http://localhost:8842/openai
 
 ## Auto-Configuration
 
-Tidebreak can auto-configure supported agents:
+Tidegate can auto-configure supported agents:
 
 ```bash
 # Detect and configure all installed agents
-tidebreak install --all
+tidegate install --all
 
 # Configure a specific agent
-tidebreak install --agent claude-code
-tidebreak install --agent codex
-tidebreak install --agent hermes
+tidegate install --agent claude-code
+tidegate install --agent codex
+tidegate install --agent hermes
 
 # Show what would be changed (dry run)
-tidebreak install --agent claude-code --dry-run
+tidegate install --agent claude-code --dry-run
 ```
 
 This modifies shell profiles / config files. Always review changes:
 ```bash
-tidebreak install --agent claude-code --diff
+tidegate install --agent claude-code --diff
 ```
 
 ## Per-Project Rules
 
-Create a `.tidebreak.conf` in your project root to add project-specific rules:
+Create a `.tidegate.conf` in your project root to add project-specific rules:
 
 ```ini
-# .tidebreak.conf in ~/projects/myapp
+# .tidegate.conf in ~/projects/myapp
 
 [local-only]
 # This project's database seeds contain PII
@@ -134,14 +134,14 @@ precedence for overlapping paths.
 ## Verifying It Works
 
 ```bash
-# Start Tidebreak
-tidebreak start
+# Start Tidegate
+tidegate start
 
 # Run any agent task
 claude "show me my nginx config"
 
 # Check the audit log
-tidebreak audit
+tidegate audit
 
 # You should see:
 # - The request was intercepted
@@ -151,12 +151,12 @@ tidebreak audit
 
 ## Troubleshooting
 
-### Agent isn't routing through Tidebreak
+### Agent isn't routing through Tidegate
 
 Some agents hardcode their API endpoint and ignore env vars. Check:
 ```bash
-# See if the agent is hitting Tidebreak
-tidebreak audit --live
+# See if the agent is hitting Tidegate
+tidegate audit --live
 
 # If no traffic appears, the agent may be bypassing the proxy
 # Try the HTTP_PROXY approach:
@@ -175,21 +175,21 @@ Start Ollama or reclassify this content.
 
 ```bash
 # Check what was redacted
-tidebreak audit --detail <id>
+tidegate audit --detail <id>
 
 # Temporarily disable a pattern
-tidebreak config set redaction.email false
+tidegate config set redaction.email false
 
 # Or use a less restrictive preset
-tidebreak config set preset desktop
+tidegate config set preset desktop
 ```
 
 ### Redaction is not aggressive enough
 
 ```bash
 # Add a custom pattern
-tidebreak config add-pattern my_pattern 'MY_SECRET_\w+' '[CUSTOM_REDACTED]'
+tidegate config add-pattern my_pattern 'MY_SECRET_\w+' '[CUSTOM_REDACTED]'
 
 # Or switch to the paranoid preset
-tidebreak config set preset paranoid
+tidegate config set preset paranoid
 ```

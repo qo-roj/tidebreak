@@ -26,7 +26,7 @@ func TestSyslogHostnameRedacts(t *testing.T) {
 	r := newTestRedactor("syslog_hostname")
 	in := "Sep  3 17:54:01 himbeerkuchen systemd[1]: Started Daily apt download.\n"
 	out, s := r.Redact(in)
-	if !strings.Contains(out, "[TB:HOST:1] systemd[1]") {
+	if !strings.Contains(out, "[TG:HOST:1] systemd[1]") {
 		t.Errorf("hostname not redacted: %q", out)
 	}
 	if !strings.Contains(out, "Sep  3 17:54:01") {
@@ -40,7 +40,7 @@ func TestSyslogHostnameRedacts(t *testing.T) {
 func TestSyslogHostnameISOTimestamp(t *testing.T) {
 	r := newTestRedactor("syslog_hostname")
 	out, _ := r.Redact("2026-09-03T17:54:03.123456+02:00 rotten-berry sshd[4242]: Failed password\n")
-	if !strings.Contains(out, "[TB:HOST:1] sshd[4242]") {
+	if !strings.Contains(out, "[TG:HOST:1] sshd[4242]") {
 		t.Errorf("ISO-format hostname not redacted: %q", out)
 	}
 }
@@ -48,10 +48,10 @@ func TestSyslogHostnameISOTimestamp(t *testing.T) {
 func TestSyslogHostnameDedup(t *testing.T) {
 	r := newTestRedactor("syslog_hostname")
 	out, s := r.Redact("Sep  3 17:54:01 host-a kernel: x\nSep  3 17:54:02 host-a kernel: y\nSep  3 17:54:03 host-b kernel: z\n")
-	if got := strings.Count(out, "[TB:HOST:1]"); got != 2 {
+	if got := strings.Count(out, "[TG:HOST:1]"); got != 2 {
 		t.Errorf("same hostname should reuse token, got %d HOST:1 in %q", got, out)
 	}
-	if !strings.Contains(out, "[TB:HOST:2]") || strings.Count(out, "[TB:HOST:2]") != 1 {
+	if !strings.Contains(out, "[TG:HOST:2]") || strings.Count(out, "[TG:HOST:2]") != 1 {
 		t.Errorf("second hostname should get HOST:2, got %q", out)
 	}
 	if s["syslog_hostname"] != 3 {
@@ -105,7 +105,7 @@ func TestSyslogHostnameKernelAndTaglessProcess(t *testing.T) {
 	for _, c := range cases {
 		r := newTestRedactor("syslog_hostname") // fresh: each case expects HOST:1
 		out, s := r.Redact(c)
-		if !strings.Contains(out, "[TB:HOST:1]") {
+		if !strings.Contains(out, "[TG:HOST:1]") {
 			t.Errorf("real syslog line not redacted: %q → %q", c, out)
 		}
 		if s["syslog_hostname"] != 1 {
@@ -118,10 +118,10 @@ func TestPasswdUsernameRedacts(t *testing.T) {
 	r := newTestRedactor("passwd_username")
 	in := "root:x:0:0:root:/root:/bin/bash\nsid:x:1000:1000:Sid Crab:/home/sid:/usr/bin/fish\n"
 	out, s := r.Redact(in)
-	if !strings.HasPrefix(out, "[TB:USER:1]:x:0:0:") {
+	if !strings.HasPrefix(out, "[TG:USER:1]:x:0:0:") {
 		t.Errorf("first username not redacted: %q", out)
 	}
-	if !strings.Contains(out, "[TB:USER:2]:x:1000:1000:Sid Crab:/home/sid") {
+	if !strings.Contains(out, "[TG:USER:2]:x:1000:1000:Sid Crab:/home/sid") {
 		t.Errorf("second username not redacted: %q", out)
 	}
 	if s["passwd_username"] != 2 {
@@ -171,7 +171,7 @@ func TestPasswdUsernameShadowVariants(t *testing.T) {
 	}
 	for _, c := range cases {
 		out, s := r.Redact(c)
-		if !strings.HasPrefix(out, "[TB:USER:") {
+		if !strings.HasPrefix(out, "[TG:USER:") {
 			t.Errorf("shadow-style line not redacted: %q → %q", c, out)
 		}
 		if s["passwd_username"] != 1 {
@@ -227,7 +227,7 @@ func TestPhoneCoversNANPForm(t *testing.T) {
 	for _, c := range cases {
 		r := newTestRedactor("phone") // fresh: each case expects PHONE:1
 		out, s := r.Redact(c)
-		if !strings.Contains(out, "[TB:PHONE:1]") {
+		if !strings.Contains(out, "[TG:PHONE:1]") {
 			t.Errorf("phone not redacted: %q → %q", c, out)
 		}
 		if s["phone"] != 1 {
@@ -248,7 +248,7 @@ func TestPhoneCoversNANPForm(t *testing.T) {
 			t.Errorf("false positive: %q → %q (%v)", c, out, s)
 		}
 	}
-	if out, _ := r.Redact("order 1234567890 done"); !strings.Contains(out, "[TB:PHONE:1]") {
+	if out, _ := r.Redact("order 1234567890 done"); !strings.Contains(out, "[TG:PHONE:1]") {
 		t.Errorf("bare 10-digit should match NANP shape (documented trade-off): %q", out)
 	}
 }
@@ -259,7 +259,7 @@ func TestPhoneCoversNANPForm(t *testing.T) {
 func TestIPv4PrivateOrdering(t *testing.T) {
 	r := newTestRedactor("ipv4_private", "ipv4")
 	out, s := r.Redact("10.1.2.3 and 172.20.1.5 and 8.8.8.8")
-	if !strings.Contains(out, "[TB:IP:") {
+	if !strings.Contains(out, "[TG:IP:") {
 		t.Errorf("addresses not redacted: %q", out)
 	}
 	if s["ipv4_private"] != 2 {

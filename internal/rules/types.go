@@ -1,12 +1,12 @@
-// Package rules implements Tidebreak's layered rule system for content
+// Package rules implements Tidegate's layered rule system for content
 // classification. Rules determine what tier (public, redacted, local-only,
 // blocked) applies to a given file path or content reference.
 //
 // Resolution order (later overrides earlier):
 //  1. Built-in defaults (embedded in binary)
 //  2. Preset rules (desktop, server, paranoid)
-//  3. User config (~/.config/tidebreak/tidebreak.conf)
-//  4. Project-local config (./.tidebreak.conf)
+//  3. User config (~/.config/tidegate/tidegate.conf)
+//  4. Project-local config (./.tidegate.conf)
 //  5. CLI flags (highest priority)
 package rules
 
@@ -58,8 +58,8 @@ type CmdRuleSpec struct {
 const (
 	LayerDefaults = 1 // embedded defaults.conf
 	LayerPreset   = 2 // preset selected at load time
-	LayerUser     = 3 // ~/.config/tidebreak/tidebreak.conf
-	LayerProject  = 4 // ./.tidebreak.conf
+	LayerUser     = 3 // ~/.config/tidegate/tidegate.conf
+	LayerProject  = 4 // ./.tidegate.conf
 )
 
 // LayeredConfig is one config layer fed into BuildRuleSetLayered.

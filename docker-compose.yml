@@ -1,33 +1,33 @@
-# Tidebreak — Docker Compose
-# Runs Tidebreak gateway + Ollama for local-only content processing.
+# Tidegate — Docker Compose
+# Runs Tidegate gateway + Ollama for local-only content processing.
 #
 # Usage:
 #   docker compose up -d
-#   tidebreak audit --live   # monitor from host
+#   tidegate audit --live   # monitor from host
 
 services:
-  tidebreak:
+  tidegate:
     build: .
-    container_name: tidebreak
+    container_name: tidegate
     restart: unless-stopped
     ports:
       - "8842:8842"
     volumes:
-      - ./config:/etc/tidebreak:ro
-      - tidebreak-data:/var/lib/tidebreak
+      - ./config:/etc/tidegate:ro
+      - tidegate-data:/var/lib/tidegate
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - XAI_API_KEY=${XAI_API_KEY:-}
-      - TIDEBREAK_OLLAMA_URL=http://ollama:11434
+      - TIDEGATE_OLLAMA_URL=http://ollama:11434
     depends_on:
       - ollama
     networks:
-      - tidebreak-net
+      - tidegate-net
 
   ollama:
     image: ollama/ollama:latest
-    container_name: tidebreak-ollama
+    container_name: tidegate-ollama
     restart: unless-stopped
     volumes:
       - ollama-models:/root/.ollama
@@ -40,12 +40,12 @@ services:
     #           count: 1
     #           capabilities: [gpu]
     networks:
-      - tidebreak-net
+      - tidegate-net
 
 volumes:
-  tidebreak-data:
+  tidegate-data:
   ollama-models:
 
 networks:
-  tidebreak-net:
+  tidegate-net:
     driver: bridge

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Tidebreak — Installer
+# Tidegate — Installer
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/qo-roj/tidebreak/main/scripts/install.sh | bash
-#   TIDEBREAK_MIRROR=https://mirror.local bash install.sh       # Fleet mirror
-#   bash install.sh --local /path/to/tidebreak-binary          # Local binary (dev)
+#   curl -fsSL https://raw.githubusercontent.com/qo-roj/tidegate/main/scripts/install.sh | bash
+#   TIDEGATE_MIRROR=https://mirror.local bash install.sh       # Fleet mirror
+#   bash install.sh --local /path/to/tidegate-binary          # Local binary (dev)
 #   bash install.sh --build                                     # Build from source (needs Go)
 #   bash install.sh --system                                    # /usr/local/bin (needs sudo)
 #   bash install.sh --user                                      # ~/.local/bin (default fallback)
@@ -19,8 +19,8 @@ set -euo pipefail
 # (--add-to-path is accepted as a deprecated no-op; this is now automatic.)
 
 VERSION="${VERSION:-latest}"
-CONFIG_DIR="${HOME}/.config/tidebreak"
-DATA_DIR="${HOME}/.local/share/tidebreak"
+CONFIG_DIR="${HOME}/.config/tidegate"
+DATA_DIR="${HOME}/.local/share/tidegate"
 LOCAL_BINARY=""
 DO_BUILD=false
 INSTALL_SCOPE="auto"   # auto | user | system
@@ -92,9 +92,9 @@ else
 fi
 
 # Mirror URL (can be overridden for fleet/private hosting)
-DOWNLOAD_BASE="${TIDEBREAK_MIRROR:-https://github.com/qo-roj/tidebreak/releases}"
+DOWNLOAD_BASE="${TIDEGATE_MIRROR:-https://github.com/qo-roj/tidegate/releases}"
 
-echo "🦞 Tidebreak — Redaction Gateway for AI Agents"
+echo "🦞 Tidegate — Redaction Gateway for AI Agents"
 echo ""
 
 # Detect OS and architecture
@@ -122,15 +122,15 @@ echo ""
 install_binary() {
     local staged="$1"
     if dir_writable "$INSTALL_DIR"; then
-        cp "$staged" "${INSTALL_DIR}/tidebreak"
-        chmod +x "${INSTALL_DIR}/tidebreak"
+        cp "$staged" "${INSTALL_DIR}/tidegate"
+        chmod +x "${INSTALL_DIR}/tidegate"
     elif can_sudo; then
-        sudo_cmd install -m 0755 "$staged" "${INSTALL_DIR}/tidebreak"
+        sudo_cmd install -m 0755 "$staged" "${INSTALL_DIR}/tidegate"
     else
         echo "✗ Cannot write to ${INSTALL_DIR} and no sudo available."
         exit 1
     fi
-    echo "✓ Binary installed to ${INSTALL_DIR}/tidebreak"
+    echo "✓ Binary installed to ${INSTALL_DIR}/tidegate"
 }
 
 # Create directories (user install dir; system dirs are expected to exist)
@@ -149,13 +149,13 @@ elif [[ "$DO_BUILD" == true ]]; then
     fi
     echo "Building from source..."
     TMP_SRC="$(mktemp -d)"
-    git clone https://github.com/qo-roj/tidebreak "$TMP_SRC" 2>/dev/null || {
+    git clone https://github.com/qo-roj/tidegate "$TMP_SRC" 2>/dev/null || {
         echo "✗ Could not clone repo. If the GitHub repo doesn't exist yet,"
         echo "  use --local /path/to/binary or build manually."
         exit 1
     }
     STAGED="$(mktemp)"
-    (cd "$TMP_SRC" && go build -o "$STAGED" ./cmd/tidebreak)
+    (cd "$TMP_SRC" && go build -o "$STAGED" ./cmd/tidegate)
     rm -rf "$TMP_SRC"
     install_binary "$STAGED"
     rm -f "$STAGED"
@@ -164,12 +164,12 @@ elif [[ "$DO_BUILD" == true ]]; then
 # Install method 3: download from mirror/GitHub releases
 else
     if [[ "$VERSION" == "latest" ]]; then
-        DOWNLOAD_URL="${DOWNLOAD_BASE}/latest/download/tidebreak-${PLATFORM}-${ARCH}"
+        DOWNLOAD_URL="${DOWNLOAD_BASE}/latest/download/tidegate-${PLATFORM}-${ARCH}"
     else
-        DOWNLOAD_URL="${DOWNLOAD_BASE}/download/${VERSION}/tidebreak-${PLATFORM}-${ARCH}"
+        DOWNLOAD_URL="${DOWNLOAD_BASE}/download/${VERSION}/tidegate-${PLATFORM}-${ARCH}"
     fi
 
-    echo "Downloading Tidebreak ${VERSION}..."
+    echo "Downloading Tidegate ${VERSION}..."
     echo "  Source: ${DOWNLOAD_URL}"
     echo ""
 
@@ -186,10 +186,10 @@ else
         echo "     bash install.sh --build"
         echo ""
         echo "  2. Install a local binary (development):"
-        echo "     bash install.sh --local /path/to/tidebreak"
+        echo "     bash install.sh --local /path/to/tidegate"
         echo ""
         echo "  3. Use a fleet mirror:"
-        echo "     TIDEBREAK_MIRROR=https://your-mirror bash install.sh"
+        echo "     TIDEGATE_MIRROR=https://your-mirror bash install.sh"
         exit 1
     fi
 fi
@@ -209,10 +209,10 @@ if ! path_in_path "$INSTALL_DIR"; then
         # the session PATH even when the interactive shell uses a different rc.
         EDITED=""
         PROFILE_FILE="${HOME}/.profile"
-        if [[ ! -f "$PROFILE_FILE" ]] || ! grep -qs "TIDEBREAK_PATH" "$PROFILE_FILE"; then
+        if [[ ! -f "$PROFILE_FILE" ]] || ! grep -qs "TIDEGATE_PATH" "$PROFILE_FILE"; then
             {
                 echo ""
-                echo "# TIDEBREAK_PATH — added by tidebreak installer"
+                echo "# TIDEGATE_PATH — added by tidegate installer"
                 echo "export PATH=\"${INSTALL_DIR}:\$PATH\""
             } >> "$PROFILE_FILE"
             EDITED="${PROFILE_FILE}"
@@ -226,23 +226,23 @@ if ! path_in_path "$INSTALL_DIR"; then
         case "$SHELL_NAME" in
             bash)
                 RC_FILE="${HOME}/.bashrc"
-                if [[ ! -f "$RC_FILE" ]] || ! grep -qs "TIDEBREAK_PATH" "$RC_FILE"; then
-                    { echo ""; echo "# TIDEBREAK_PATH — added by tidebreak installer"; echo "export PATH=\"${INSTALL_DIR}:\$PATH\""; } >> "$RC_FILE"
+                if [[ ! -f "$RC_FILE" ]] || ! grep -qs "TIDEGATE_PATH" "$RC_FILE"; then
+                    { echo ""; echo "# TIDEGATE_PATH — added by tidegate installer"; echo "export PATH=\"${INSTALL_DIR}:\$PATH\""; } >> "$RC_FILE"
                     EDITED="${EDITED:+$EDITED and }${RC_FILE}"
                 fi
                 ;;
             zsh)
                 RC_FILE="${HOME}/.zshrc"
-                if [[ ! -f "$RC_FILE" ]] || ! grep -qs "TIDEBREAK_PATH" "$RC_FILE"; then
-                    { echo ""; echo "# TIDEBREAK_PATH — added by tidebreak installer"; echo "export PATH=\"${INSTALL_DIR}:\$PATH\""; } >> "$RC_FILE"
+                if [[ ! -f "$RC_FILE" ]] || ! grep -qs "TIDEGATE_PATH" "$RC_FILE"; then
+                    { echo ""; echo "# TIDEGATE_PATH — added by tidegate installer"; echo "export PATH=\"${INSTALL_DIR}:\$PATH\""; } >> "$RC_FILE"
                     EDITED="${EDITED:+$EDITED and }${RC_FILE}"
                 fi
                 ;;
             fish)
                 RC_FILE="${HOME}/.config/fish/config.fish"
                 mkdir -p "$(dirname "$RC_FILE")"
-                if [[ ! -f "$RC_FILE" ]] || ! grep -qs "TIDEBREAK_PATH" "$RC_FILE"; then
-                    { echo ""; echo "# TIDEBREAK_PATH — added by tidebreak installer"; echo "set -gx PATH ${INSTALL_DIR} \$PATH"; } >> "$RC_FILE"
+                if [[ ! -f "$RC_FILE" ]] || ! grep -qs "TIDEGATE_PATH" "$RC_FILE"; then
+                    { echo ""; echo "# TIDEGATE_PATH — added by tidegate installer"; echo "set -gx PATH ${INSTALL_DIR} \$PATH"; } >> "$RC_FILE"
                     EDITED="${EDITED:+$EDITED and }${RC_FILE}"
                 fi
                 ;;
@@ -251,7 +251,7 @@ if ! path_in_path "$INSTALL_DIR"; then
         echo ""
         if [[ -n "$EDITED" ]]; then
             echo "✓ Added ${INSTALL_DIR} to PATH via ${EDITED}"
-            echo "  Open a NEW terminal (or run: source ~/.bashrc) and tidebreak will be found."
+            echo "  Open a NEW terminal (or run: source ~/.bashrc) and tidegate will be found."
         else
             echo "✓ PATH entry already present in your rc files."
         fi
@@ -259,10 +259,10 @@ if ! path_in_path "$INSTALL_DIR"; then
 fi
 
 # Create default config if it doesn't exist
-if [[ ! -f "${CONFIG_DIR}/tidebreak.conf" ]]; then
-    cat > "${CONFIG_DIR}/tidebreak.conf" << 'CONF'
-# Tidebreak Configuration
-# Docs: https://github.com/qo-roj/tidebreak/blob/main/docs/rules-guide.md
+if [[ ! -f "${CONFIG_DIR}/tidegate.conf" ]]; then
+    cat > "${CONFIG_DIR}/tidegate.conf" << 'CONF'
+# Tidegate Configuration
+# Docs: https://github.com/qo-roj/tidegate/blob/main/docs/rules-guide.md
 
 [gateway]
 port = 8842
@@ -293,7 +293,7 @@ ollama_model = llama3:8b
 # training-data   — Redact all PII for fine-tuning datasets
 desktop
 CONF
-    echo "✓ Default config created at ${CONFIG_DIR}/tidebreak.conf"
+    echo "✓ Default config created at ${CONFIG_DIR}/tidegate.conf"
 fi
 
 # Check for Ollama
@@ -303,29 +303,29 @@ if command -v ollama &>/dev/null; then
 else
     echo "⚠ Ollama not found. Local-only content will be blocked (not summarized)."
     echo "  Install Ollama: https://ollama.com"
-    echo "  Or run: tidebreak setup-ollama"
+    echo "  Or run: tidegate setup-ollama"
 fi
 
 # Done
 echo ""
 echo "─────────────────────────────────────"
-echo "  Tidebreak installed successfully"
+echo "  Tidegate installed successfully"
 echo "─────────────────────────────────────"
 echo ""
 echo "Next steps:"
 echo ""
 echo "  1. Start the gateway:"
-echo "     tidebreak start"
+echo "     tidegate start"
 echo ""
 echo "  2. Configure your agents:"
-echo "     tidebreak install --agent claude-code"
-echo "     tidebreak install --agent codex"
-echo "     tidebreak install --agent hermes"
+echo "     tidegate install --agent claude-code"
+echo "     tidegate install --agent codex"
+echo "     tidegate install --agent hermes"
 echo ""
 echo "  3. Verify it's working:"
-echo "     tidebreak audit --live"
+echo "     tidegate audit --live"
 echo ""
 echo "  4. Review your rules:"
-echo "     tidebreak config edit"
+echo "     tidegate config edit"
 echo ""
-echo "Docs: https://github.com/qo-roj/tidebreak"
+echo "Docs: https://github.com/qo-roj/tidegate"

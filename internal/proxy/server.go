@@ -1,4 +1,4 @@
-// Package proxy implements the Tidebreak HTTP reverse proxy.
+// Package proxy implements the Tidegate HTTP reverse proxy.
 // It listens on localhost, intercepts LLM API requests, routes them through
 // the classifier/redactor/router, and forwards to the upstream cloud API.
 //
@@ -16,8 +16,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/qo-roj/tidebreak/internal/audit"
-	"github.com/qo-roj/tidebreak/internal/route"
+	"github.com/qo-roj/tidegate/internal/audit"
+	"github.com/qo-roj/tidegate/internal/route"
 )
 
 // UpstreamRoutes maps path prefixes to upstream API hosts.
@@ -61,7 +61,7 @@ var upstreamClient = &http.Client{
 	},
 }
 
-// Server is the Tidebreak proxy server.
+// Server is the Tidegate proxy server.
 type Server struct {
 	Router   *route.Router
 	AuditLog *audit.Log
@@ -84,7 +84,7 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/", s.handleProxy)
 
 	addr := fmt.Sprintf("127.0.0.1:%d", s.Port)
-	log.Printf("Tidebreak proxy listening on %s", addr)
+	log.Printf("Tidegate proxy listening on %s", addr)
 
 	server := &http.Server{
 		Addr:         addr,
@@ -100,8 +100,8 @@ func (s *Server) Start() error {
 // handleProxy is the main request handler.
 func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
 	// Identify the agent — check custom header first, then fall back to
-	// User-Agent-based auto-detection for agents that don't set X-Tidebreak-Agent.
-	agent := r.Header.Get("X-Tidebreak-Agent")
+	// User-Agent-based auto-detection for agents that don't set X-Tidegate-Agent.
+	agent := r.Header.Get("X-Tidegate-Agent")
 	if agent == "" {
 		agent = detectAgent(r)
 	}
@@ -141,7 +141,7 @@ func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
 		log.Printf("request from agent=%s had blocked content", agent)
 	}
 
-	// Forward to upstream — strip the Tidebreak path prefix, keep the query
+	// Forward to upstream — strip the Tidegate path prefix, keep the query
 	// string (beta features, API versions are passed there)
 	upstreamPath := strings.TrimPrefix(r.URL.Path, "/"+provider)
 	if r.URL.RawQuery != "" {
@@ -153,7 +153,7 @@ func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Copy headers, filtering Tidebreak-specific, hop-by-hop, and
+	// Copy headers, filtering Tidegate-specific, hop-by-hop, and
 	// per-connection headers per RFC 7230 section 6.1.
 	for k, v := range r.Header {
 		if isFilteredHeader(k) {
@@ -286,11 +286,11 @@ func (s *Server) resolveUpstream(path string) (host string, provider string) {
 }
 
 // isFilteredHeader returns true for headers that should not be forwarded
-// to the upstream API: Tidebreak-internal headers, hop-by-hop headers
+// to the upstream API: Tidegate-internal headers, hop-by-hop headers
 // (RFC 7230 section 6.1), and per-connection headers like Cookie and Host.
 func isFilteredHeader(headerName string) bool {
-	// Tidebreak-internal
-	if headerName == "X-Tidebreak-Agent" {
+	// Tidegate-internal
+	if headerName == "X-Tidegate-Agent" {
 		return true
 	}
 	// Per-connection / control headers

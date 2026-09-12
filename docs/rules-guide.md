@@ -1,8 +1,8 @@
-# Tidebreak — Rules Guide
+# Tidegate — Rules Guide
 
 ## How Rules Work
 
-Tidebreak uses a layered rule system to classify content before it reaches any LLM.
+Tidegate uses a layered rule system to classify content before it reaches any LLM.
 
 ### Classification Tiers
 
@@ -21,8 +21,8 @@ Rules are evaluated in this order (later rules override earlier ones):
 
 1. **Built-in defaults** (`rules/defaults.conf`)
 2. **Preset rules** (e.g. `rules/presets/server.conf`)
-3. **User config** (`~/.config/tidebreak/tidebreak.conf`)
-4. **Project-local config** (`.tidebreak.conf` in project root)
+3. **User config** (`~/.config/tidegate/tidegate.conf`)
+4. **Project-local config** (`.tidegate.conf` in project root)
 5. **CLI flags** (highest priority, temporary)
 
 When two rules match the same path, the more specific one wins. Within the same
@@ -73,7 +73,7 @@ cat /etc/shadow           = block
 ```
 
 How it works: when an agent runs a command (e.g. `journalctl -u nginx`), the
-tool result contains the command and its output. Tidebreak matches the command
+tool result contains the command and its output. Tidegate matches the command
 against `[cmd]` rules and classifies the output accordingly. Path rules do NOT
 apply to command output — they only apply to file content.
 
@@ -89,39 +89,39 @@ apply to command output — they only apply to file content.
 Redaction patterns are regex-based. Each pattern has:
 - A name (for config and audit log)
 - A regex that matches sensitive data
-- A replacement token in the form `[TB:CATEGORY:N]` (e.g. `[TB:IP:1]`, `[TB:EMAIL:2]`) — one token per distinct value, restored in responses
+- A replacement token in the form `[TG:CATEGORY:N]` (e.g. `[TG:IP:1]`, `[TG:EMAIL:2]`) — one token per distinct value, restored in responses
 
 Built-in patterns:
 
 | Name | Matches | Example | Replaced With |
 |---|---|---|---|
-| `ipv4` | Public IPv4 addresses (RFC1918 ranges go to `ipv4_private` when enabled) | `203.0.113.42` | `[TB:IP:1]` |
-| `ipv4_private` | Private IPv4 ranges (opt-in: server/paranoid presets) | `10.1.2.3` | `[TB:IP:1]` |
-| `ipv6` | Full-form IPv6 addresses | `2001:0db8:85a3:0000:0000:8a2e:0370:7334` | `[TB:IP:1]` |
-| `email` | Email addresses | `user@example.com` | `[TB:EMAIL:1]` |
-| `phone` | Phone numbers (international and NANP) | `+49 170 1234567`, `555-123-4567` | `[TB:PHONE:1]` |
-| `api_key_github` | GitHub tokens (`ghp_…`, `gho_…`, `ghs_…`, `ghu_…`, `ghr_…`, `github_pat_…`) | `ghp_xxxx...` | `[TB:TOKEN:1]` |
-| `api_key_openai` | OpenAI keys | `sk-proj-xxxx...` | `[TB:TOKEN:1]` |
-| `api_key_anthropic` | Anthropic keys | `sk-ant-xxxx...` | `[TB:TOKEN:1]` |
-| `api_key_aws` | AWS access keys | `AKIAxxxx...` | `[TB:TOKEN:1]` |
-| `api_key_aws_secret` | AWS secret keys (`aws_secret_access_key = …`) | `aws_secret_access_key = xxxx...` | `[TB:TOKEN:1]` |
-| `api_key_google` | Google API keys | `AIza...` | `[TB:TOKEN:1]` |
-| `api_key_stripe` | Stripe keys | `sk_live_xxxx...` | `[TB:TOKEN:1]` |
-| `api_key_slack` | Slack tokens | `xoxb-xxxx...` | `[TB:TOKEN:1]` |
-| `api_key_gitlab` | GitLab tokens | `glpat-xxxx...` | `[TB:TOKEN:1]` |
-| `bearer_token` | Bearer tokens | `Bearer xxxx...` | `[TB:TOKEN:1]` |
-| `jwt` | JWT tokens | `eyJxxxx...` | `[TB:JWT:1]` |
-| `private_key` | PEM private keys (RSA/EC/DSA/OPENSSH/PGP blocks) | `-----BEGIN ... PRIVATE KEY-----` | `[TB:KEY:1]` |
-| `mac_address` | MAC addresses | `00:1B:44:11:3A:B7` | `[TB:MAC:1]` |
-| `database_connection` | Database URLs (postgres/mysql/mongodb/redis://) | `postgres://user:***@host/db` | `[TB:DBURL:1]` |
-| `credit_card` | 13–16 digit card numbers (with separators) | `4111 1111 1111 1111` | `[TB:CC:1]` |
-| `ssn_us` | US SSNs | `123-45-6789` | `[TB:SSN:1]` |
-| `hostname_internal` | Internal hostnames (opt-in: server/paranoid presets) | `machine.internal` | `[TB:HOST:1]` |
-| `iban` | IBANs (opt-in: paranoid, training-data presets) | `NL91ABNA0417162300` | `[TB:IBAN:1]` |
-| `passport` | Passport numbers (opt-in: paranoid, training-data presets) | `K12345678` | `[TB:PASSPORT:1]` |
-| `high_entropy_secret` | 36+ char alphanumeric strings (opt-in: training-data preset; matches UUIDs too — deliberate fail-safe) | `zZ9Y8X7W6V5U4T3S2R1Q0P9O8N7M6L5K4J3I2H1` | `[TB:SECRET:1]` |
-| `syslog_hostname` | Hostnames in syslog-style timestamped lines with process tag (structure-anchored: timestamp and process stay, hostname tokenized) | `Sep  3 17:54:01 web01 sshd[1]: …` | `Sep  3 17:54:01 [TB:HOST:1] sshd[1]: …` |
-| `passwd_username` | Account names in passwd/shadow-style lines (structure-anchored: field layout stays, name tokenized) | `alice:x:1000:1000:…` | `[TB:USER:1]:x:1000:1000:…` |
+| `ipv4` | Public IPv4 addresses (RFC1918 ranges go to `ipv4_private` when enabled) | `203.0.113.42` | `[TG:IP:1]` |
+| `ipv4_private` | Private IPv4 ranges (opt-in: server/paranoid presets) | `10.1.2.3` | `[TG:IP:1]` |
+| `ipv6` | Full-form IPv6 addresses | `2001:0db8:85a3:0000:0000:8a2e:0370:7334` | `[TG:IP:1]` |
+| `email` | Email addresses | `user@example.com` | `[TG:EMAIL:1]` |
+| `phone` | Phone numbers (international and NANP) | `+49 170 1234567`, `555-123-4567` | `[TG:PHONE:1]` |
+| `api_key_github` | GitHub tokens (`ghp_…`, `gho_…`, `ghs_…`, `ghu_…`, `ghr_…`, `github_pat_…`) | `ghp_xxxx...` | `[TG:TOKEN:1]` |
+| `api_key_openai` | OpenAI keys | `sk-proj-xxxx...` | `[TG:TOKEN:1]` |
+| `api_key_anthropic` | Anthropic keys | `sk-ant-xxxx...` | `[TG:TOKEN:1]` |
+| `api_key_aws` | AWS access keys | `AKIAxxxx...` | `[TG:TOKEN:1]` |
+| `api_key_aws_secret` | AWS secret keys (`aws_secret_access_key = …`) | `aws_secret_access_key = xxxx...` | `[TG:TOKEN:1]` |
+| `api_key_google` | Google API keys | `AIza...` | `[TG:TOKEN:1]` |
+| `api_key_stripe` | Stripe keys | `sk_live_xxxx...` | `[TG:TOKEN:1]` |
+| `api_key_slack` | Slack tokens | `xoxb-xxxx...` | `[TG:TOKEN:1]` |
+| `api_key_gitlab` | GitLab tokens | `glpat-xxxx...` | `[TG:TOKEN:1]` |
+| `bearer_token` | Bearer tokens | `Bearer xxxx...` | `[TG:TOKEN:1]` |
+| `jwt` | JWT tokens | `eyJxxxx...` | `[TG:JWT:1]` |
+| `private_key` | PEM private keys (RSA/EC/DSA/OPENSSH/PGP blocks) | `-----BEGIN ... PRIVATE KEY-----` | `[TG:KEY:1]` |
+| `mac_address` | MAC addresses | `00:1B:44:11:3A:B7` | `[TG:MAC:1]` |
+| `database_connection` | Database URLs (postgres/mysql/mongodb/redis://) | `postgres://user:***@host/db` | `[TG:DBURL:1]` |
+| `credit_card` | 13–16 digit card numbers (with separators) | `4111 1111 1111 1111` | `[TG:CC:1]` |
+| `ssn_us` | US SSNs | `123-45-6789` | `[TG:SSN:1]` |
+| `hostname_internal` | Internal hostnames (opt-in: server/paranoid presets) | `machine.internal` | `[TG:HOST:1]` |
+| `iban` | IBANs (opt-in: paranoid, training-data presets) | `NL91ABNA0417162300` | `[TG:IBAN:1]` |
+| `passport` | Passport numbers (opt-in: paranoid, training-data presets) | `K12345678` | `[TG:PASSPORT:1]` |
+| `high_entropy_secret` | 36+ char alphanumeric strings (opt-in: training-data preset; matches UUIDs too — deliberate fail-safe) | `zZ9Y8X7W6V5U4T3S2R1Q0P9O8N7M6L5K4J3I2H1` | `[TG:SECRET:1]` |
+| `syslog_hostname` | Hostnames in syslog-style timestamped lines with process tag (structure-anchored: timestamp and process stay, hostname tokenized) | `Sep  3 17:54:01 web01 sshd[1]: …` | `Sep  3 17:54:01 [TG:HOST:1] sshd[1]: …` |
+| `passwd_username` | Account names in passwd/shadow-style lines (structure-anchored: field layout stays, name tokenized) | `alice:x:1000:1000:…` | `[TG:USER:1]:x:1000:1000:…` |
 
 Pattern toggles live in `[redaction.patterns]` (e.g. `syslog_hostname = false`); defaults are set in `rules/defaults.conf`. Extended patterns (private IPs, internal hostnames, IBAN, passport, high-entropy secrets) are opt-in per preset.
 
@@ -134,7 +134,7 @@ internal_host = '(?P<value>[a-z0-9-]+\.internal\.company\.com)'
 internal_host_replacement = '[INTERNAL_HOST_REDACTED_N]'
 
 # Or via CLI
-# tidebreak config add-pattern internal_host '[a-z0-9-]+\.internal\.company\.com' '[INTERNAL_HOST_REDACTED_N]'
+# tidegate config add-pattern internal_host '[a-z0-9-]+\.internal\.company\.com' '[INTERNAL_HOST_REDACTED_N]'
 ```
 
 ## Presets
@@ -143,16 +143,16 @@ Presets are named collections of rules for common scenarios:
 
 ```bash
 # List available presets
-tidebreak presets
+tidegate presets
 # desktop    — Omarchy / personal workstation
 # server     — Production server with user data
 # paranoid   — Maximum redaction, minimal cloud exposure
 
 # Use a preset
-tidebreak config set preset server
+tidegate config set preset server
 
 # Combine presets (later ones extend earlier ones)
-tidebreak config set preset desktop,server
+tidegate config set preset desktop,server
 ```
 
 ## Common Patterns
@@ -227,20 +227,20 @@ projects at all.
 
 ```bash
 # Test how a file would be classified
-tidebreak classify ~/.ssh/id_ed25519
+tidegate classify ~/.ssh/id_ed25519
 # → tier: blocked
 # → reason: matches block rule ~/.ssh/id_*
 
-tidebreak classify /etc/nginx/nginx.conf
+tidegate classify /etc/nginx/nginx.conf
 # → tier: redacted
 # → reason: matches redact rule /etc/nginx/**
 # → redactions: 2 IPs found, 0 emails, 1 token
 
-tidebreak classify /var/log/nginx/access.log
+tidegate classify /var/log/nginx/access.log
 # → tier: redacted
 # → redactions: 847 IPs, 23 emails, 0 tokens
 
 # Test what the cloud model would actually receive
-tidebreak dry-run --file /etc/nginx/nginx.conf
+tidegate dry-run --file /etc/nginx/nginx.conf
 # Shows the redacted output that would be sent to the cloud
 ```

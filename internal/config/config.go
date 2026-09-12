@@ -1,6 +1,6 @@
-// Package config handles loading and merging Tidebreak configuration from
+// Package config handles loading and merging Tidegate configuration from
 // multiple sources: embedded defaults, preset files, user config, and
-// project-local .tidebreak.conf files.
+// project-local .tidegate.conf files.
 package config
 
 import (
@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/qo-roj/tidebreak/internal/rules"
+	"github.com/qo-roj/tidegate/internal/rules"
 )
 
 //go:embed rules/defaults.conf
@@ -29,7 +29,7 @@ var paranoidConf embed.FS
 //go:embed rules/presets/training-data.conf
 var trainingDataConf embed.FS
 
-// Gateway holds the runtime configuration for the Tidebreak gateway.
+// Gateway holds the runtime configuration for the Tidegate gateway.
 type Gateway struct {
 	Port     int
 	LogLevel string
@@ -61,8 +61,8 @@ type AppConfig struct {
 //  1. Built-in defaults (embedded in binary)
 //  2. Preset (embedded in binary) — the preset indicated by user/project
 //     config takes priority over the default desktop preset
-//  3. User config (~/.config/tidebreak/tidebreak.conf)
-//  4. Project-local config (./.tidebreak.conf)
+//  3. User config (~/.config/tidegate/tidegate.conf)
+//  4. Project-local config (./.tidegate.conf)
 //  5. CLI flags (passed as params)
 func Load(cliPort int, cliPreset string) (*AppConfig, error) {
 	cfg := &AppConfig{
@@ -95,7 +95,7 @@ func Load(cliPort int, cliPreset string) (*AppConfig, error) {
 		presetChoice = cliPreset
 	}
 	home, _ := os.UserHomeDir()
-	userConfigPath := filepath.Join(home, ".config", "tidebreak", "tidebreak.conf")
+	userConfigPath := filepath.Join(home, ".config", "tidegate", "tidegate.conf")
 	var userCfg, projCfg *rules.Config
 	if fileExists(userConfigPath) {
 		userCfg, err = rules.ParseConfig(userConfigPath)
@@ -106,8 +106,8 @@ func Load(cliPort int, cliPreset string) (*AppConfig, error) {
 			presetChoice = userCfg.Preset
 		}
 	}
-	if fileExists(".tidebreak.conf") {
-		projCfg, err = rules.ParseConfig(".tidebreak.conf")
+	if fileExists(".tidegate.conf") {
+		projCfg, err = rules.ParseConfig(".tidegate.conf")
 		if err != nil {
 			return nil, fmt.Errorf("project config: %w", err)
 		}
@@ -188,8 +188,8 @@ func fileExists(path string) bool {
 
 // SaveDefaultConfig writes a default config file to the given path.
 func SaveDefaultConfig(path string) error {
-	content := `# Tidebreak Configuration
-# Docs: https://github.com/qo-roj/tidebreak/blob/main/docs/rules-guide.md
+	content := `# Tidegate Configuration
+# Docs: https://github.com/qo-roj/tidegate/blob/main/docs/rules-guide.md
 
 [gateway]
 port = 8842
